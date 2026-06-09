@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Trading Simulator</title>
+<script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.5/dist/umd/klinecharts.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #131722; color: #eee; font-family: monospace; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+#chart { touch-action: none; }
+
+/* ===== トップバー（価格・損益） ===== */
+#infobar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 4px 10px; background: #1a1a1a; border-bottom: 1px solid #333; flex-shrink: 0;
+  font-size: 12px;
+}
+#cur-time  { color: #666; }
+#cur-price { color: #fff; font-size: 15px; font-weight: bold; }
+#pnl-float, #pnl-total { font-size: 13px; font-weight: bold; }
+#pos-info  { color: #aaa; font-size: 11px; margin-left: auto; }
+
+/* ===== チャート ===== */
+#chart { flex: 1; min-height: 0; }
+#chart canvas { touch-action: none; }
+
+/* ===== ボトムバー ===== */
+#bottombar {
+  background: #1a1a1a; border-bottom: 1px solid #333; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 0;
+}
+#row-trade {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  border-bottom: 1px solid #2a2a2a;
+}
+#row-control {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+}
+
+button {
+  border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #fff;
+  padding: 10px 16px; font-size: 14px;
+  min-height: 44px; /* タッチターゲット */
+  -webkit-tap-highlight-color: transparent;
+}
+#btn-buy   { background: #1565c0; flex: 1; }
+#btn-sell  { background: #b71c1c; flex: 1; }
+#btn-close { background: #444;    flex: 1; font-size: 12px; }
+#btn-fibo  { background: #5d4037; min-width: 60px; }
+#btn-fibo.active { background: #f57f17; color: #000; }
+#btn-fibo-clear  { background: #2a2a2a; font-size: 11px; min-width: 44px; min-height: 36px; padding: 4px 8px; }
+
+#lot-wrap { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #aaa; }
+select {
+  background: #222; color: #eee; border: 1px solid #444; border-radius: 4px;
+  padding: 6px 4px; font-size: 13px; min-height: 36px;
+}
+
+#btn-play  { background: #1b5e20; min-width: 80px; }
+#btn-step  { background: #2e7d32; min-width: 44px; }
+.tf-btn    { background: #2a2a3a; font-size: 12px; padding: 8px 10px; min-height: 36px; }
+.tf-btn.active { background: #1565c0; }
+#speed-wrap { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; flex-shrink: 0; }
+input[type=range] { width: 60px; accent-color: #26a69a; }
+
+#positions {
+  background: #111; border-top: 1px solid #222;
+  padding: 3px 8px; font-size: 11px; min-height: 20px;
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex-shrink: 0;
+}
+
+/* スマホ向け追加調整 */
+@media (max-width: 500px) {
+  button { padding: 10px 10px; font-size: 13px; }
+  .tf-btn { padding: 8px 7px; font-size: 11px; }
+  #btn-play { min-width: 64px; }
+  input[type=range] { width: 48px; }
+}
+</style>
+</head>
+<body>
+
+<!-- トップ: 価格・損益 -->
+<div id="infobar">
+  <span id="cur-time">--</span>
+  <span id="cur-price">--</span>
+  <span id="pnl-float">含み: ±0</span>
+  <span id="pnl-total">確定+含み: ±0</span>
+  <span id="pos-info"></span>
+</div>
+
+<!-- ツールバー（MT5風：チャートの上） -->
+<div id="bottombar">
+  <!-- 売買行 -->
+  <div id="row-trade">
+    <div id="lot-wrap">ロット<select id="lot">
+      <option>0.01</option><option>0.05</option><option selected>0.1</option>
+      <option>0.5</option><option>1.0</option>
+    </select></div>
+    <button id="btn-buy">BUY</button>
+    <button id="btn-sell">SELL</button>
+    <button id="btn-close">CLOSE</button>
+    <button id="btn-fibo">FIBO</button>
+    <button id="btn-fibo-clear">✕</button>
+  </div>
+  <!-- 再生・TF行 -->
+  <div id="row-control">
+    <button id="btn-play">▶ 再生</button>
+    <button id="btn-step">+1</button>
+    <div id="speed-wrap">速<input type="range" id="speed" min="1" max="10" value="1"></div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:12px;color:#aaa">
+      TF<select id="tf-select">
+        <option value="1" selected>1m</option>
+        <option value="5">5m</option>
+        <option value="15">15m</option>
+        <option value="30">30m</option>
+        <option value="60">1h</option>
+        <option value="240">4h</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- チャート -->
+<div id="chart"></div>
+
+<div id="positions">ポジションなし</div>
+
+<script>
+// ===== チャート初期化 =====
+const chart = klinecharts.init('chart', {
+  styles: {
+    candle: {
+      bar: { upColor: '#26a69a', downColor: '#ef5350', upBorderColor: '#26a69a', downBorderColor: '#ef5350', upWickColor: '#26a69a', downWickColor: '#ef5350' },
+      priceMark: { last: { show: true } }
+    },
+    grid: { horizontal: { color: '#2a2a3a' }, vertical: { color: '#2a2a3a' } },
+    xAxis: { tickText: { color: '#aaa' }, scrollZoomEnabled: true },
+    yAxis: { tickText: { color: '#aaa' }, scrollZoomEnabled: true },
+  }
+});
+
+// リサイズ対応
+new ResizeObserver(() => chart.resize()).observe(document.getElementById('chart'));
+
+// ===== データ読み込み =====
+let bars1m   = [];  // 元の1分足（常に保持）
+let curIdx1m = 200; // 常に bars1m のインデックス
+let curTF    = 1;
+let playing  = false;
+let timer    = null;
+
+// 1分足 → 任意時間足に集計
+function aggregateBars(bars, tfMin) {
+  if (tfMin === 1) return bars;
+  const tfSec = tfMin * 60;
+  const result = [];
+  let cur = null;
+  for (const b of bars) {
+    const bucket = Math.floor(b.t / tfSec) * tfSec;
+    if (!cur || cur.t !== bucket) {
+      if (cur) result.push(cur);
+      cur = { t: bucket, o: b.o, h: b.h, l: b.l, c: b.c };
+    } else {
+      if (b.h > cur.h) cur.h = b.h;
+      if (b.l < cur.l) cur.l = b.l;
+      cur.c = b.c;
+    }
+  }
+  if (cur) result.push(cur);
+  return result;
+}
+
+// 現在の1m位置から部分TFバーを返す
+function getPartialBar(idx) {
+  if (curTF === 1) return bars1m[idx];
+  const tfSec = curTF * 60;
+  const bucket = Math.floor(bars1m[idx].t / tfSec) * tfSec;
+  let start = idx;
+  while (start > 0 && Math.floor(bars1m[start-1].t / tfSec) * tfSec === bucket) start--;
+  let bar = { t: bucket, o: bars1m[start].o, h: -Infinity, l: Infinity, c: bars1m[idx].c };
+  for (let j = start; j <= idx; j++) {
+    if (bars1m[j].h > bar.h) bar.h = bars1m[j].h;
+    if (bars1m[j].l < bar.l) bar.l = bars1m[j].l;
+  }
+  return bar;
+}
+
+fetch('ohlc_1m.json')
+  .then(r => r.json())
+  .then(data => {
+    bars1m   = data;
+    curIdx1m = Math.min(200, bars1m.length - 1);
+    renderBars();
+  });
+
+function toKLine(b) {
+  return { timestamp: b.t * 1000, open: b.o, high: b.h, low: b.l, close: b.c, volume: 0 };
+}
+
+function renderBars() {
+  // bars1m[0..curIdx1m] を現在TFで集計して表示
+  const visible = aggregateBars(bars1m.slice(0, curIdx1m + 1), curTF).map(toKLine);
+  chart.applyNewData(visible);
+  const bar = bars1m[curIdx1m];
+  document.getElementById('cur-time').textContent =
+    new Date(bar.t * 1000).toLocaleString('ja-JP', { timeZone:'UTC', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  document.getElementById('cur-price').textContent = bar.c.toFixed(3);
+  updatePnL(bar.c);
+}
+
+// ===== 時間足切り替え =====
+document.getElementById('tf-select').addEventListener('change', e => {
+  const tf = parseInt(e.target.value);
+  if (tf === curTF) return;
+  stopPlay(); playing = false; btnPlay.textContent = '▶ 再生';
+  curTF = tf;
+  renderBars();
+});
+
+// ===== 再生制御 =====
+const btnPlay = document.getElementById('btn-play');
+const speedEl = document.getElementById('speed');
+
+btnPlay.addEventListener('click', () => {
+  playing = !playing;
+  btnPlay.textContent = playing ? '⏸ 停止' : '▶ 再生';
+  if (playing) startPlay(); else stopPlay();
+});
+
+document.getElementById('btn-step').addEventListener('click', () => {
+  stopPlay(); playing = false; btnPlay.textContent = '▶ 再生';
+  advance(1);
+});
+
+// ===== 擬似ティック生成（ブラウン橋 + ボラクラスタリング）=====
+// 両端固定のランダムウォーク。H/Lを必ず通りながらOHLC辻褄を合わせる
+function brownBridge(from, to, steps, volatility) {
+  // ブラウン橋: 各ステップで「終点への誘導」+「ランダムノイズ」
+  const pts = [from];
+  let cur = from;
+  // ボラティリティクラスター: 連続する動きの大きさを変化させる
+  let vol = volatility;
+  let momentum = 0;
+  for (let i = 1; i <= steps; i++) {
+    const remaining = steps - i + 1;
+    const drift = (to - cur) / remaining;          // 終点へ引力
+    vol = vol * (0.85 + Math.random() * 0.3);      // ボラのクラスタリング
+    vol = Math.max(volatility * 0.3, Math.min(volatility * 2.5, vol));
+    momentum = momentum * 0.6 + (Math.random() - 0.5) * vol; // モメンタム
+    cur = cur + drift + momentum;
+    pts.push(cur);
+  }
+  pts[pts.length - 1] = to;
+  return pts;
+}
+
+function generateTicks(bar, numTicks) {
+  const { o, h, l, c } = bar;
+  const range = Math.max(h - l, 0.001);
+  const vol   = range * 0.08; // 1ティックあたりのボラ基準
+
+  // H/Lをどのタイミングで出すか乱数で決定
+  const goHighFirst = Math.random() < 0.5;
+  const ext1 = goHighFirst ? h : l;
+  const ext2 = goHighFirst ? l : h;
+
+  // 各セグメントにticksを配分（乱数でランダムな比率に）
+  const r1 = 0.15 + Math.random() * 0.25;
+  const r2 = 0.25 + Math.random() * 0.30;
+  const n1  = Math.max(2, Math.round(numTicks * r1));
+  const n2  = Math.max(2, Math.round(numTicks * r2));
+  const n3  = Math.max(2, numTicks - n1 - n2);
+
+  const seg1 = brownBridge(o,    ext1, n1, vol);
+  const seg2 = brownBridge(ext1, ext2, n2, vol);
+  const seg3 = brownBridge(ext2, c,    n3, vol);
+
+  // 結合してH/L内にクランプ
+  const raw = [...seg1, ...seg2.slice(1), ...seg3.slice(1)];
+  const clamped = raw.map((p, i) =>
+    i === 0 ? o : i === raw.length - 1 ? c : Math.max(l, Math.min(h, p))
+  );
+
+  // 低速時に「静止区間」をランダム挿入（同値を数回繰り返す）
+  const spd = parseInt(speedEl.value);
+  if (spd <= 4) {
+    const result = [];
+    for (let i = 0; i < clamped.length; i++) {
+      result.push(clamped[i]);
+      // 20〜40%の確率で同値を1〜4回追加（速度が遅いほど多く）
+      if (Math.random() < 0.3) {
+        const repeats = Math.floor(Math.random() * (5 - spd)) + 1;
+        for (let r = 0; r < repeats; r++) result.push(clamped[i]);
+      }
+    }
+    return result;
+  }
+  return clamped;
+}
+
+let tickQueue  = []; // 現在バーの擬似ティックキュー
+let tickTimer  = null;
+
+function flushTicks() { clearInterval(tickTimer); tickTimer = null; tickQueue = []; }
+
+function startTickPlay(bar, onDone) {
+  const spd    = parseInt(speedEl.value);
+  const nTicks = Math.max(4, Math.round(20 - (spd - 1) * 1.8));
+  const tickMs = Math.max(8, Math.round(getBarDelay(spd) / nTicks));
+  tickQueue    = generateTicks(bar, nTicks);
+
+  // 現在1m足より前のバーで確定している TFバーのベース（H/Lを先読みしない）
+  const baseBar = (() => {
+    if (curTF === 1) return { t: bar.t, o: bar.o, h: bar.o, l: bar.o, c: bar.o };
+    const tfSec  = curTF * 60;
+    const bucket = Math.floor(bar.t / tfSec) * tfSec;
+    let b = { t: bucket, o: null, h: -Infinity, l: Infinity, c: bar.o };
+    for (let j = curIdx1m - 1; j >= 0; j--) {
+      if (Math.floor(bars1m[j].t / tfSec) * tfSec !== bucket) break;
+      if (b.o === null) b.o = bars1m[j].o; // さらに左→上書き
+      b.o = bars1m[j].o;
+      if (bars1m[j].h > b.h) b.h = bars1m[j].h;
+      if (bars1m[j].l < b.l) b.l = bars1m[j].l;
+    }
+    if (b.o === null) { b.o = bar.o; b.h = bar.o; b.l = bar.o; }
+    return b;
+  })();
+
+  let tickH = baseBar.h, tickL = baseBar.l;
+  let i = 0;
+  tickTimer = setInterval(() => {
+    if (i >= tickQueue.length) { flushTicks(); onDone(); return; }
+    const price = tickQueue[i++];
+    if (price > tickH) tickH = price;
+    if (price < tickL) tickL = price;
+    const partial = { t: baseBar.t, o: baseBar.o, h: tickH, l: tickL, c: price };
+    chart.updateData(toKLine(partial));
+    document.getElementById('cur-price').textContent = price.toFixed(3);
+    updatePnL(price);
+  }, tickMs);
+}
+
+function getBarDelay(spd) {
+  return [3000,1500,800,400,200,120,80,50,25,10][spd - 1];
+}
+
+function startPlay() {
+  function tick() {
+    if (curIdx1m + 1 >= bars1m.length - 1) { stopPlay(); playing = false; btnPlay.textContent = '▶ 再生'; return; }
+    curIdx1m++;
+    const bar = bars1m[curIdx1m];
+    updateTimeLabel(bar);
+    startTickPlay(bar, () => { if (playing) timer = setTimeout(tick, 0); });
+  }
+  timer = setTimeout(tick, 0);
+}
+
+function stopPlay() { clearTimeout(timer); timer = null; flushTicks(); }
+
+speedEl.addEventListener('input', () => { if (playing) { stopPlay(); startPlay(); } });
+
+function updateTimeLabel(bar) {
+  document.getElementById('cur-time').textContent =
+    new Date(bar.t * 1000).toLocaleString('ja-JP', { timeZone:'UTC', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+}
+
+function advance(n) {
+  if (curIdx1m + n >= bars1m.length - 1) return false;
+  flushTicks();
+  curIdx1m += n;
+  chart.updateData(toKLine(getPartialBar(curIdx1m)));
+  const bar = bars1m[curIdx1m];
+  updateTimeLabel(bar);
+  document.getElementById('cur-price').textContent = bar.c.toFixed(3);
+  updatePnL(bar.c);
+  return true;
+}
+
+// ===== ポジション管理 =====
+let positions   = [];
+let posId       = 0;
+let realizedPnL = 0; // 確定済み損益
+
+function getLot() { return parseFloat(document.getElementById('lot').value); }
+
+document.getElementById('btn-buy').addEventListener('click', () => {
+  const price = bars1m[curIdx1m].c;
+  positions.push({ id: ++posId, type: 'BUY', price, lot: getLot() });
+  updatePnL(price);
+});
+document.getElementById('btn-sell').addEventListener('click', () => {
+  const price = bars1m[curIdx1m].c;
+  positions.push({ id: ++posId, type: 'SELL', price, lot: getLot() });
+  updatePnL(price);
+});
+document.getElementById('btn-close').addEventListener('click', () => {
+  const cur = bars1m[curIdx1m].c;
+  // 全ポジションを決済して確定損益に加算
+  for (const p of positions) {
+    const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
+    realizedPnL += diff * p.lot * 5000;
+  }
+  positions = [];
+  updatePnL(cur);
+});
+
+function calcFloat(cur) {
+  let f = 0;
+  for (const p of positions) {
+    const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
+    f += diff * p.lot * 5000;
+  }
+  return f;
+}
+
+function fmt(v) { return `${v >= 0 ? '+' : ''}${v.toFixed(0)}`; }
+
+function updatePnL(cur) {
+  const floatPnL = calcFloat(cur);
+  const totalPnL = realizedPnL + floatPnL;
+
+  const fe = document.getElementById('pnl-float');
+  fe.textContent = `含み: ${fmt(floatPnL)}`;
+  fe.style.color  = floatPnL >= 0 ? '#26a69a' : '#ef5350';
+
+  const te = document.getElementById('pnl-total');
+  te.textContent = `確定+含み: ${fmt(totalPnL)}`;
+  te.style.color  = totalPnL >= 0 ? '#26a69a' : '#ef5350';
+
+  updatePosDisplay(cur);
+}
+
+function updatePosDisplay(cur) {
+  const el = document.getElementById('positions');
+  const info = document.getElementById('pos-info');
+  if (positions.length === 0) {
+    el.innerHTML = `<span style="color:#666">ポジションなし</span>　<span style="color:#aaa">確定: ${fmt(realizedPnL)} USD</span>`;
+    info.textContent = '';
+    return;
+  }
+  el.innerHTML = positions.map(p => {
+    const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
+    const pnl  = diff * p.lot * 5000;
+    return `<span style="color:${pnl>=0?'#26a69a':'#ef5350'}">[${p.id}] ${p.type} ${p.lot} @ ${p.price.toFixed(3)} → ${fmt(pnl)}</span>`;
+  }).join('  ') + `　<span style="color:#aaa;font-size:11px">確定累計: ${fmt(realizedPnL)}</span>`;
+  info.textContent = `${positions.length}件`;
+}
+
+// ===== フィボナッチ（Canvasドラッグ方式）=====
+const FIBO_LEVELS  = [0, 1.0, 1.382, 1.618, 1.764, 2.0, 2.618];
+const FIBO_COLORS  = ['#888','#ffffff','#ffeb3b','#4caf50','#ff9800','#ef5350','#e040fb'];
+const FIBO_DASHES  = [[], [], [4,4], [], [4,4], [], [4,4]];
+
+// Canvas オーバーレイを chart div の上に重ねる
+const chartDiv = document.getElementById('chart');
+const fiboCanvas = document.createElement('canvas');
+Object.assign(fiboCanvas.style, {
+  position: 'absolute', top: '0', left: '0',
+  pointerEvents: 'none', zIndex: '10', touchAction: 'none'
+});
+chartDiv.style.position = 'relative';
+chartDiv.appendChild(fiboCanvas);
+const ctx = fiboCanvas.getContext('2d');
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  fiboCanvas.width  = chartDiv.clientWidth  * dpr;
+  fiboCanvas.height = chartDiv.clientHeight * dpr;
+  fiboCanvas.style.width  = chartDiv.clientWidth  + 'px';
+  fiboCanvas.style.height = chartDiv.clientHeight + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  redrawFibo();
+}
+new ResizeObserver(resizeCanvas).observe(chartDiv);
+
+// 保存済みフィボ { p1, p2, t1, t2 } (価格 + タイムスタンプ)
+let fiboSaved = [];
+let fiboDrag  = null; // { p1, p2, t1, t2 }
+
+// 価格 → Y座標（KLineChart convertToPixel API）
+function priceToY(price) {
+  try {
+    const r = chart.convertToPixel({ value: price }, { paneId: 'candle_pane', absolute: true });
+    return r ? r.y : null;
+  } catch(e) { return null; }
+}
+
+// タイムスタンプ → ピクセルX（範囲外は中央2点から外挿）
+function timeToX(ts) {
+  try {
+    const r = chart.convertToPixel({ timestamp: ts }, { paneId: 'candle_pane', absolute: true });
+    if (r?.x !== undefined && r.x !== null) return r.x;
+    // 範囲外（未来等）→ 中央2点でpx/msを求めて外挿
+    const cx = fiboCanvas.width;
+    const ra = chart.convertFromPixel({ x: cx * 0.3, y: 100 }, { paneId: 'candle_pane', absolute: true });
+    const rb = chart.convertFromPixel({ x: cx * 0.7, y: 100 }, { paneId: 'candle_pane', absolute: true });
+    if (ra?.timestamp && rb?.timestamp) {
+      const pxPerMs = (cx * 0.4) / (rb.timestamp - ra.timestamp);
+      return cx * 0.7 + (ts - rb.timestamp) * pxPerMs;
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+// 中央2点でms/pxを計算するヘルパー
+function getMsPerPx() {
+  const cx = fiboCanvas.width;
+  const ra = chart.convertFromPixel({ x: cx * 0.3, y: 100 }, { paneId: 'candle_pane', absolute: true });
+  const rb = chart.convertFromPixel({ x: cx * 0.7, y: 100 }, { paneId: 'candle_pane', absolute: true });
+  if (ra?.timestamp && rb?.timestamp && rb.timestamp !== ra.timestamp) {
+    return { msPerPx: (rb.timestamp - ra.timestamp) / (cx * 0.4), refX: cx * 0.7, refTs: rb.timestamp };
+  }
+  return null;
+}
+
+// ピクセル → タイムスタンプ
+// convertFromPixelは最終バー以降をクランプするので、最終バーのX以降は外挿
+function xToTime(x) {
+  try {
+    const lastTs = bars1m[curIdx1m]?.t * 1000;
+    const lastPx = lastTs ? chart.convertToPixel({ timestamp: lastTs }, { paneId: 'candle_pane', absolute: true })?.x : null;
+
+    if (lastPx !== null && lastPx !== undefined && x > lastPx + 2) {
+      // 最終バーより右 → 外挿
+      const ref = getMsPerPx();
+      if (ref) return ref.refTs + (x - ref.refX) * ref.msPerPx;
+      return lastTs + (x - lastPx) * (curTF * 60 * 1000); // 粗いフォールバック
+    }
+    const r = chart.convertFromPixel({ x, y: 100 }, { paneId: 'candle_pane', absolute: true });
+    return (r?.timestamp) ? r.timestamp : null;
+  } catch(e) { return null; }
+}
+
+// タイムスタンプ → ピクセルX
+// 最終バー以降のtsはconvertToPixelがnullを返すので外挿
+function timeToX(ts) {
+  try {
+    const lastTs = bars1m[curIdx1m]?.t * 1000;
+    if (lastTs && ts > lastTs + curTF * 60 * 1000) {
+      // 未来のts → 外挿
+      const ref = getMsPerPx();
+      if (ref) return ref.refX + (ts - ref.refTs) / ref.msPerPx;
+      const lastPx = chart.convertToPixel({ timestamp: lastTs }, { paneId: 'candle_pane', absolute: true })?.x;
+      if (lastPx !== null) return lastPx + (ts - lastTs) / (curTF * 60 * 1000);
+      return null;
+    }
+    const r = chart.convertToPixel({ timestamp: ts }, { paneId: 'candle_pane', absolute: true });
+    return (r?.x !== undefined && r.x !== null) ? r.x : null;
+  } catch(e) { return null; }
+}
+
+// rawX1/rawX2: ドラッグ中の生ピクセル（指定時はtsよりも優先）
+function drawOneFibo(p1, p2, t1, t2, alpha = 1.0, rawX1 = null, rawX2 = null) {
+  const range  = Math.abs(p1 - p2);
+  const isDown = p1 >= p2;
+
+  const xa = timeToX(t1) ?? rawX1;
+  const xb = timeToX(t2) ?? rawX2;
+  const xL = Math.min(xa ?? 0,              xb ?? fiboCanvas.width);
+  const xR = Math.max(xa ?? 0,              xb ?? fiboCanvas.width);
+
+  FIBO_LEVELS.forEach((lvl, i) => {
+    // 100% = p1（ドラッグ開始点）、0% = p2、以降は同方向に延伸
+    const price = isDown ? (p2 + range * lvl) : (p2 - range * lvl);
+    const y = priceToY(price);
+    if (y === null || y < 0 || y > fiboCanvas.height) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = FIBO_COLORS[i];
+    ctx.lineWidth   = (lvl === 0 || lvl === 1) ? 1.5 : 1;
+    ctx.setLineDash(FIBO_DASHES[i]);
+    ctx.beginPath();
+    ctx.moveTo(xL, y);
+    ctx.lineTo(xR, y);
+    ctx.stroke();
+
+    ctx.globalAlpha = alpha * 0.85;
+    ctx.fillStyle   = FIBO_COLORS[i];
+    ctx.font        = '11px monospace';
+    ctx.setLineDash([]);
+    // ラベル: ドラッグ下向き→ラインの下、上向き→ラインの上
+    const labelY = isDown ? y - 3 : y + 12;
+    ctx.fillText(`${(lvl * 100).toFixed(1)}%  ${price.toFixed(3)}`, Math.min(xR + 4, fiboCanvas.width - 115), labelY);
+    ctx.restore();
+  });
+}
+
+const HANDLE_R = 6; // ハンドル半径(px)
+
+// ハンドル（p1/p2の丸）を描画
+function drawHandles() {
+  if (!fiboActive) return;
+  fiboSaved.forEach(f => {
+    [['p1','t1'], ['p2','t2']].forEach(([pk, tk]) => {
+      const x = timeToX(f[tk]);
+      const y = priceToY(f[pk]);
+      if (x === null || y === null) return;
+      ctx.beginPath();
+      ctx.arc(x, y, HANDLE_R, 0, Math.PI * 2);
+      ctx.fillStyle = '#f57f17';
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  });
+}
+
+function drawPositionLines() {
+  if (positions.length === 0) return;
+  const cur = bars1m[curIdx1m]?.c ?? 0;
+  positions.forEach(p => {
+    const y = priceToY(p.price);
+    if (y === null || y < 0 || y > fiboCanvas.height) return;
+    const isBuy = p.type === 'BUY';
+    const diff  = isBuy ? cur - p.price : p.price - cur;
+    const profit = diff >= 0;
+    ctx.save();
+    ctx.strokeStyle = isBuy ? '#42a5f5' : '#ef5350';
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(fiboCanvas.width, y);
+    ctx.stroke();
+    // ラベル
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.9;
+    ctx.font = 'bold 11px monospace';
+    const pnl  = diff * p.lot * 5000;
+    const sign = pnl >= 0 ? '+' : '';
+    const label = `${p.type}  ${sign}${pnl.toFixed(0)} USD`;
+    ctx.font = 'bold 12px monospace';
+    const tw = ctx.measureText(label).width;
+    const lx = (chartDiv.clientWidth - tw) / 2 - 4;
+    ctx.fillStyle = profit ? '#1b5e20cc' : '#b71c1ccc';
+    ctx.fillRect(lx, y - 15, tw + 8, 16);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, lx + 4, y - 3);
+    ctx.restore();
+  });
+}
+
+function redrawFibo() {
+  ctx.clearRect(0, 0, fiboCanvas.width, fiboCanvas.height);
+  drawPositionLines();
+  fiboSaved.forEach(f => drawOneFibo(f.p1, f.p2, f.t1, f.t2, 1.0, null, f.rx2));
+  if (fiboDrag) drawOneFibo(fiboDrag.p1, fiboDrag.p2, fiboDrag.t1, fiboDrag.t2, 0.6, fiboDrag.rx1, fiboDrag.rx2);
+  drawHandles();
+}
+
+// 50ms間隔で再描画（スクロール・ズーム・スケール変更に追随）
+setInterval(redrawFibo, 50);
+// イベントでも即時反映
+chart.subscribeAction(klinecharts.ActionType.OnVisibleRangeChange, redrawFibo);
+
+// ===== ドラッグ操作 =====
+const btnFibo = document.getElementById('btn-fibo');
+let fiboActive     = false;
+let dragging       = false;
+let dragStartPrice = null;
+let editHandle     = null; // { fiboIdx, point:'p1'|'p2' } ハンドル編集中
+
+// ハンドルのヒットテスト
+function hitHandle(mx, my) {
+  for (let i = fiboSaved.length - 1; i >= 0; i--) {
+    const f = fiboSaved[i];
+    const pairs = [['p1','t1'], ['p2','t2']];
+    for (const [pk, tk] of pairs) {
+      const x = timeToX(f[tk]);
+      const y = priceToY(f[pk]);
+      if (x === null || y === null) continue;
+      const dx = mx - x, dy = my - y;
+      if (Math.sqrt(dx*dx + dy*dy) < HANDLE_R + 6)
+        return { fiboIdx: i, point: pk, timeKey: tk };
+    }
+  }
+  return null;
+}
+
+function enableFiboMode() {
+  fiboActive = true;
+  fiboCanvas.style.pointerEvents = 'auto';
+  fiboCanvas.style.cursor = 'crosshair';
+  btnFibo.classList.add('active');
+  chart.setScrollEnabled(false);
+  chart.setZoomEnabled(false);
+  redrawFibo();
+}
+function disableFiboMode() {
+  fiboActive = false; dragging = false; fiboDrag = null; editHandle = null;
+  fiboCanvas.style.pointerEvents = 'none';
+  fiboCanvas.style.cursor = 'default';
+  btnFibo.classList.remove('active');
+  chart.setScrollEnabled(true);
+  chart.setZoomEnabled(true);
+  redrawFibo();
+}
+
+btnFibo.addEventListener('click', () => {
+  fiboActive ? disableFiboMode() : enableFiboMode();
+});
+
+function pixelToPrice(y) {
+  try {
+    const r = chart.convertFromPixel({ x: 100, y }, { paneId: 'candle_pane', absolute: true });
+    return (r && r.value !== undefined) ? r.value : null;
+  } catch(e) { return null; }
+}
+
+let dragStartTime = null;
+let dragStartX    = null;
+
+fiboCanvas.addEventListener('mousedown', e => {
+  if (!fiboActive) return;
+  const hit = hitHandle(e.offsetX, e.offsetY);
+  if (hit) {
+    editHandle = hit;
+    fiboCanvas.style.cursor = 'grab';
+  } else {
+    const p = pixelToPrice(e.offsetY);
+    const t = xToTime(e.offsetX);
+    if (p !== null && t !== null) { dragStartPrice = p; dragStartTime = t; dragStartX = e.offsetX; dragging = true; }
+  }
+});
+
+// ドラッグ中はキャンバス外でも追従（document レベル）
+function canvasRelPos(e) {
+  const rect = fiboCanvas.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+document.addEventListener('mousemove', e => {
+  if (!fiboActive) return;
+  const { x, y } = canvasRelPos(e);
+
+  if (editHandle) {
+    const p = pixelToPrice(y), t = xToTime(x);
+    if (p !== null) {
+      fiboSaved[editHandle.fiboIdx][editHandle.point]   = p;
+      if (t !== null) fiboSaved[editHandle.fiboIdx][editHandle.timeKey] = t;
+      redrawFibo();
+    }
+  } else if (dragging && dragStartPrice !== null) {
+    const p = pixelToPrice(y) ?? fiboDrag?.p2 ?? dragStartPrice;
+    const t = xToTime(x)     ?? fiboDrag?.t2 ?? dragStartTime;
+    // rx1/rx2: 生ピクセル（タイムスタンプ変換が不安定な領域でも正確に描画）
+    fiboDrag = { p1: dragStartPrice, p2: p, t1: dragStartTime, t2: t, rx1: dragStartX, rx2: x };
+    redrawFibo();
+  } else if (e.target === fiboCanvas) {
+    const hit = hitHandle(x, y);
+    fiboCanvas.style.cursor = hit ? 'grab' : 'crosshair';
+  }
+});
+
+document.addEventListener('mouseup', e => {
+  if (!fiboActive) return;
+  const { x, y } = canvasRelPos(e);
+
+  if (editHandle) {
+    editHandle = null;
+    fiboCanvas.style.cursor = 'crosshair';
+    redrawFibo();
+  } else if (dragging) {
+    if (fiboDrag && Math.abs(fiboDrag.p2 - fiboDrag.p1) > 0.001) {
+      // ドラッグあり → 保存
+      fiboSaved.push({ p1: fiboDrag.p1, p2: fiboDrag.p2, t1: fiboDrag.t1, t2: fiboDrag.t2, rx1: fiboDrag.rx1, rx2: fiboDrag.rx2 });
+    } else {
+      // クリックのみ（ドラッグなし）→ フィボモード終了
+      disableFiboMode();
+    }
+    dragging = false; dragStartPrice = null; dragStartTime = null; dragStartX = null; fiboDrag = null;
+    redrawFibo();
+  }
+});
+
+document.getElementById('btn-fibo-clear').addEventListener('click', () => {
+  fiboSaved = [];
+  disableFiboMode();
+});
+
+// ===== フィボオブジェクトのヒットテスト（ライン近傍10px） =====
+function hitFiboObject(mx, my) {
+  for (let i = fiboSaved.length - 1; i >= 0; i--) {
+    const f = fiboSaved[i];
+    const xa = timeToX(f.t1), xb = timeToX(f.t2);
+    if (xa === null || xb === null) continue;
+    const xL = Math.min(xa, xb), xR = Math.max(xa, xb);
+    if (mx < xL - 10 || mx > xR + 60) continue; // ラベル領域も含む
+    const range = Math.abs(f.p1 - f.p2);
+    const isDown = f.p1 >= f.p2;
+    for (const lvl of FIBO_LEVELS) {
+      const price = isDown ? (f.p2 + range * lvl) : (f.p2 - range * lvl);
+      const y = priceToY(price);
+      if (y !== null && Math.abs(my - y) < 10) return i;
+    }
+  }
+  return -1;
+}
+
+// ===== 削除メニュー =====
+const deleteMenu = document.createElement('div');
+Object.assign(deleteMenu.style, {
+  position: 'fixed', display: 'none', zIndex: '100',
+  background: '#2b2b2b', border: '1px solid #4a4a4a', borderRadius: '2px',
+  padding: '2px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.7)',
+  fontSize: '13px', color: '#ddd', minWidth: '140px'
+});
+const menuItemStyle = 'width:100%;background:none;padding:5px 20px;border:none;color:#ddd;font-size:13px;cursor:pointer;text-align:left;font-family:monospace;display:block';
+const menuItemHover = 'this.style.background="#3d6a99"';
+const menuItemOut   = 'this.style.background="none"';
+deleteMenu.innerHTML = `
+  <button id="dmenu-edit" style="${menuItemStyle}" onmouseover='${menuItemHover}' onmouseout='${menuItemOut}'>編集</button>
+  <div style="height:1px;background:#4a4a4a;margin:2px 0"></div>
+  <button id="dmenu-del" style="${menuItemStyle};color:#ff6b6b" onmouseover='${menuItemHover}' onmouseout='${menuItemOut}'>削除</button>
+`;
+document.body.appendChild(deleteMenu);
+
+let deleteTargetIdx = -1;
+function showDeleteMenu(x, y, idx) {
+  deleteTargetIdx = idx;
+  deleteMenu.style.display = 'block';
+  const mh = deleteMenu.offsetHeight;
+  const mw = deleteMenu.offsetWidth;
+  deleteMenu.style.left = Math.min(x, window.innerWidth  - mw - 4) + 'px';
+  deleteMenu.style.top  = Math.max(4, y - mh - 4) + 'px';
+  deleteMenu.style.display = 'block';
+}
+function hideDeleteMenu() { deleteMenu.style.display = 'none'; deleteTargetIdx = -1; }
+
+document.getElementById('dmenu-edit').addEventListener('click', () => {
+  if (deleteTargetIdx >= 0) {
+    enableFiboMode();
+  }
+  hideDeleteMenu();
+});
+document.getElementById('dmenu-del').addEventListener('click', () => {
+  if (deleteTargetIdx >= 0) { fiboSaved.splice(deleteTargetIdx, 1); redrawFibo(); }
+  hideDeleteMenu();
+});
+document.addEventListener('touchstart', e => {
+  if (!deleteMenu.contains(e.target)) hideDeleteMenu();
+}, { passive: true });
+document.addEventListener('mousedown', e => {
+  if (!deleteMenu.contains(e.target)) hideDeleteMenu();
+});
+
+// ===== タッチ操作（スマホ対応）=====
+let longPressTimer = null;
+let touchMoved     = false;
+let touchDragging  = false;
+
+function getTouchPos(e) {
+  const t = e.touches[0];
+  const rect = fiboCanvas.getBoundingClientRect();
+  return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+}
+
+// fiboCanvas にもタッチ受付（FIBOモード時）
+fiboCanvas.addEventListener('touchstart', e => {
+  if (!fiboActive) return;
+  e.preventDefault();
+  touchMoved = false;
+  const { x, y } = getTouchPos(e);
+
+  // 長押し検出（FIBOモード外でも動作させたいので後で別途追加）
+  longPressTimer = setTimeout(() => {
+    if (!touchMoved) {
+      const idx = hitFiboObject(x, y);
+      if (idx >= 0) {
+        const t = e.touches[0];
+        showDeleteMenu(t.clientX, t.clientY - 60, idx);
+        dragging = false; dragStartPrice = null; dragStartTime = null; fiboDrag = null;
+      }
+    }
+  }, 500);
+
+  const hit = hitHandle(x, y);
+  if (hit) {
+    editHandle = hit;
+  } else {
+    const p = pixelToPrice(y), t = xToTime(x);
+    if (p !== null && t !== null) { dragStartPrice = p; dragStartTime = t; touchDragging = true; }
+  }
+}, { passive: false });
+
+fiboCanvas.addEventListener('touchmove', e => {
+  if (!fiboActive) return;
+  e.preventDefault();
+  touchMoved = true;
+  clearTimeout(longPressTimer);
+  const { x, y } = getTouchPos(e);
+
+  if (editHandle) {
+    const p = pixelToPrice(y), t = xToTime(x);
+    if (p !== null) {
+      fiboSaved[editHandle.fiboIdx][editHandle.point]   = p;
+      if (t !== null) fiboSaved[editHandle.fiboIdx][editHandle.timeKey] = t;
+      redrawFibo();
+    }
+  } else if (touchDragging && dragStartPrice !== null) {
+    const p = pixelToPrice(y), t = xToTime(x);
+    if (p !== null && t !== null) {
+      fiboDrag = { p1: dragStartPrice, p2: p, t1: dragStartTime, t2: t };
+      redrawFibo();
+    }
+  }
+}, { passive: false });
+
+fiboCanvas.addEventListener('touchend', e => {
+  if (!fiboActive) return;
+  clearTimeout(longPressTimer);
+  if (editHandle) { editHandle = null; redrawFibo(); }
+  else if (touchDragging) {
+    if (fiboDrag && Math.abs(fiboDrag.p2 - dragStartPrice) > 0.001) {
+      fiboSaved.push({ ...fiboDrag });
+    } else {
+      // タップのみ（ドラッグなし）→ フィボモード終了
+      disableFiboMode();
+    }
+    touchDragging = false; dragStartPrice = null; dragStartTime = null; fiboDrag = null;
+    redrawFibo();
+  }
+}, { passive: true });
+
+// FIBOモード外でも長押しで削除メニュー（チャート全体）
+chartDiv.addEventListener('touchstart', e => {
+  if (fiboActive) return; // FIBOモード時は上の処理に任せる
+  touchMoved = false;
+  const t0 = e.touches[0];
+  const rect = chartDiv.getBoundingClientRect();
+  const x = t0.clientX - rect.left, y = t0.clientY - rect.top;
+  longPressTimer = setTimeout(() => {
+    if (!touchMoved) {
+      const idx = hitFiboObject(x, y);
+      if (idx >= 0) showDeleteMenu(t0.clientX, t0.clientY - 60, idx);
+    }
+  }, 500);
+}, { passive: true });
+chartDiv.addEventListener('touchmove', () => { touchMoved = true; clearTimeout(longPressTimer); }, { passive: true });
+chartDiv.addEventListener('touchend',  () => clearTimeout(longPressTimer), { passive: true });
+
+// ===== 右クリックで削除メニュー（PC） =====
+fiboCanvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+  const idx = hitFiboObject(e.offsetX, e.offsetY);
+  if (idx >= 0) showDeleteMenu(e.clientX, e.clientY, idx);
+});
+// FIBOモード外でもチャート上で右クリック
+chartDiv.addEventListener('contextmenu', e => {
+  if (fiboActive) return;
+  const rect = chartDiv.getBoundingClientRect();
+  const idx = hitFiboObject(e.clientX - rect.left, e.clientY - rect.top);
+  if (idx >= 0) { e.preventDefault(); showDeleteMenu(e.clientX, e.clientY, idx); }
+});
+
+// ===== FIBOモード外クリック/タッチで終了 =====
+function handleFiboExit(e) {
+  if (!fiboActive) return;
+  const t = e.target;
+  if (t === btnFibo || t === document.getElementById('btn-fibo-clear')
+      || fiboCanvas.contains(t) || deleteMenu.contains(t)) return;
+  disableFiboMode();
+}
+document.addEventListener('click', handleFiboExit, true);
+document.addEventListener('touchstart', handleFiboExit, true);
+
+// ===== キーボード =====
+document.addEventListener('keydown', e => {
+  if (e.key === ' ')          { e.preventDefault(); btnPlay.click(); }
+  if (e.key === 'ArrowRight') advance(1);
+  if (e.key === 'b' || e.key === 'B') document.getElementById('btn-buy').click();
+  if (e.key === 's' || e.key === 'S') document.getElementById('btn-sell').click();
+  // CLOSE ALLはボタンのみ（誤作動防止）
+  if (e.key === 'f' || e.key === 'F') btnFibo.click();
+  if (e.key === 'Escape')     disableFiboMode();
+});
+</script>
+</body>
+</html>
