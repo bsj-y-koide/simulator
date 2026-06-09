@@ -969,6 +969,63 @@ function handleFiboExit(e) {
 document.addEventListener('click', handleFiboExit, true);
 document.addEventListener('touchstart', handleFiboExit, true);
 
+// ===== タッチ→マウス変換（軸スケール用） =====
+// klinecharts v9のY軸/X軸はmouseイベントのみ対応のため、
+// 軸エリアでのタッチをmouseイベントに変換して転送する
+(() => {
+  const XAXIS_H = 30, YAXIS_W = 55;
+  let proxyActive = false;
+  let lastTarget = null;
+
+  function isAxisZone(cx, cy) {
+    const rect = chartDiv.getBoundingClientRect();
+    const x = cx - rect.left, y = cy - rect.top;
+    if (y > rect.height - XAXIS_H) return true;
+    if (x > rect.width - YAXIS_W) return true;
+    return false;
+  }
+
+  function dispatchMouse(type, touch) {
+    const el = document.elementFromPoint(touch.clientX, touch.clientY) || lastTarget;
+    if (!el) return;
+    lastTarget = el;
+    el.dispatchEvent(new MouseEvent(type, {
+      clientX: touch.clientX, clientY: touch.clientY,
+      screenX: touch.screenX, screenY: touch.screenY,
+      button: 0, buttons: type === 'mouseup' ? 0 : 1,
+      bubbles: true, cancelable: true
+    }));
+  }
+
+  chartDiv.addEventListener('touchstart', e => {
+    if (fiboActive || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    if (!isAxisZone(t.clientX, t.clientY)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    proxyActive = true;
+    dispatchMouse('mousedown', t);
+  }, { passive: false, capture: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!proxyActive) return;
+    e.preventDefault();
+    dispatchMouse('mousemove', e.touches[0]);
+  }, { passive: false });
+
+  document.addEventListener('touchend', e => {
+    if (!proxyActive) return;
+    proxyActive = false;
+    dispatchMouse('mouseup', e.changedTouches[0]);
+    lastTarget = null;
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', () => {
+    proxyActive = false;
+    lastTarget = null;
+  }, { passive: true });
+})();
+
 // ===== キーボード =====
 document.addEventListener('keydown', e => {
   if (e.key === ' ')          { e.preventDefault(); btnPlay.click(); }
