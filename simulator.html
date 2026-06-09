@@ -10,33 +10,31 @@
 body { background: #131722; color: #eee; font-family: monospace; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
 #chart { touch-action: none; }
 
-/* ===== トップバー（価格・損益） ===== */
-#infobar {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  padding: 4px 10px; background: #1a1a1a; border-bottom: 1px solid #333; flex-shrink: 0;
-  font-size: 12px;
+/* ===== ツールバー ===== */
+#toolbar {
+  background: #1a1a1a; border-bottom: 1px solid #333; flex-shrink: 0;
 }
-#cur-time  { color: #666; }
-#cur-price { color: #fff; font-size: 15px; font-weight: bold; }
-#pnl-float, #pnl-total { font-size: 13px; font-weight: bold; }
+#row1 {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 6px; font-size: 11px; flex-wrap: nowrap; overflow-x: auto;
+}
+#row2 {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 6px; border-top: 1px solid #2a2a2a;
+}
+#cur-time  { color: #666; white-space: nowrap; }
+#cur-price { color: #fff; font-size: 14px; font-weight: bold; white-space: nowrap; }
+#pnl-float, #pnl-total { font-size: 11px; font-weight: bold; white-space: nowrap; }
 #pos-info  { color: #aaa; font-size: 11px; margin-left: auto; }
+#row1 #btn-play { background: #1b5e20; padding: 2px 8px; min-height: 22px; min-width: 28px; font-size: 11px; }
+#row1 select { font-size: 11px; min-height: 22px; padding: 1px 2px; }
+#row2 button { flex: 1; min-height: 32px; font-size: 12px; padding: 4px 2px; }
 
 /* ===== チャート ===== */
 #chart { flex: 1; min-height: 0; }
 #chart canvas { touch-action: none; }
 
 /* ===== ボトムバー ===== */
-#bottombar {
-  background: #1a1a1a; border-bottom: 1px solid #333; flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 0;
-}
-#row-trade {
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
-  border-bottom: 1px solid #2a2a2a;
-}
-#row-control {
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
-}
 
 button {
   border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #fff;
@@ -57,12 +55,10 @@ select {
   padding: 6px 4px; font-size: 13px; min-height: 36px;
 }
 
-#btn-play  { background: #1b5e20; min-width: 80px; }
-#btn-step  { background: #2e7d32; min-width: 44px; }
 .tf-btn    { background: #2a2a3a; font-size: 12px; padding: 8px 10px; min-height: 36px; }
 .tf-btn.active { background: #1565c0; }
 #speed-wrap { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; flex-shrink: 0; }
-input[type=range] { width: 60px; accent-color: #26a69a; }
+input[type=range] { width: 100px; accent-color: #26a69a; }
 
 #positions {
   background: #111; border-top: 1px solid #222;
@@ -81,44 +77,35 @@ input[type=range] { width: 60px; accent-color: #26a69a; }
 </head>
 <body>
 
-<!-- トップ: 価格・損益 -->
-<div id="infobar">
-  <span id="cur-time">--</span>
-  <span id="cur-price">--</span>
-  <span id="pnl-float">含み: ±0</span>
-  <span id="pnl-total">確定+含み: ±0</span>
-  <span id="pos-info"></span>
-</div>
-
-<!-- ツールバー（MT5風：チャートの上） -->
-<div id="bottombar">
-  <!-- 売買行 -->
-  <div id="row-trade">
-    <div id="lot-wrap">ロット<select id="lot">
+<!-- ツールバー2行 -->
+<div id="toolbar">
+  <div id="row1">
+    <span id="cur-time" style="display:none">--</span>
+    <span id="cur-price" style="display:none">--</span>
+    <span id="pnl-float">含み: ±0</span>
+    <span id="pnl-total">確定+含み: ±0</span>
+    <button id="btn-play">▶</button>
+    <div id="speed-wrap">速<input type="range" id="speed" min="1" max="10" value="1"></div>
+    <select id="tf-select">
+      <option value="1" selected>1m</option>
+      <option value="5">5m</option>
+      <option value="15">15m</option>
+      <option value="30">30m</option>
+      <option value="60">1h</option>
+      <option value="240">4h</option>
+    </select>
+    <select id="lot" title="ロット">
       <option>0.01</option><option>0.05</option><option selected>0.1</option>
       <option>0.5</option><option>1.0</option>
-    </select></div>
+    </select>
+  </div>
+  <div id="row2">
     <button id="btn-buy">BUY</button>
     <button id="btn-sell">SELL</button>
     <button id="btn-close">CLOSE</button>
     <button id="btn-fibo">FIBO</button>
     <button id="btn-fibo-clear">✕</button>
-  </div>
-  <!-- 再生・TF行 -->
-  <div id="row-control">
-    <button id="btn-play">▶ 再生</button>
-    <button id="btn-step">+1</button>
-    <div id="speed-wrap">速<input type="range" id="speed" min="1" max="10" value="1"></div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:12px;color:#aaa">
-      TF<select id="tf-select">
-        <option value="1" selected>1m</option>
-        <option value="5">5m</option>
-        <option value="15">15m</option>
-        <option value="30">30m</option>
-        <option value="60">1h</option>
-        <option value="240">4h</option>
-      </select>
-    </div>
+    <span id="pos-info"></span>
   </div>
 </div>
 
@@ -133,9 +120,12 @@ const chart = klinecharts.init('chart', {
   styles: {
     candle: {
       bar: { upColor: '#26a69a', downColor: '#ef5350', upBorderColor: '#26a69a', downBorderColor: '#ef5350', upWickColor: '#26a69a', downWickColor: '#ef5350' },
-      priceMark: { last: { show: true } }
+      priceMark: { last: { show: true } },
+      tooltip: { showRule: 'none' }
     },
     grid: { horizontal: { color: '#2a2a3a' }, vertical: { color: '#2a2a3a' } },
+    crosshair: { show: true, text: { show: false }, horizontal: { show: true }, vertical: { show: true } },
+    indicator: { tooltip: { showName: false, showParams: false } },
     xAxis: { tickText: { color: '#aaa' }, scrollZoomEnabled: true },
     yAxis: { tickText: { color: '#aaa' }, scrollZoomEnabled: true },
   }
@@ -187,11 +177,30 @@ function getPartialBar(idx) {
   return bar;
 }
 
-fetch('ohlc_1m.json')
-  .then(r => r.json())
+fetch('ohlc_1m.json.gz')
+  .then(r => new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).json())
   .then(data => {
-    bars1m   = data;
-    curIdx1m = Math.min(200, bars1m.length - 1);
+    bars1m = data;
+    // 各取引日の開始位置を収集（日付が変わった最初のバー）
+    const dayStarts = [];
+    let lastDate = '';
+    for (let i = 0; i < bars1m.length; i++) {
+      const d = new Date(bars1m[i].t * 1000);
+      const dateStr = d.toISOString().slice(0, 10);
+      if (dateStr !== lastDate) {
+        dayStarts.push(i);
+        lastDate = dateStr;
+      }
+    }
+    // 過去3日分（4320本）さかのぼれる候補だけ残す
+    const PAST_BARS = 4320;
+    const candidates = dayStarts.filter(i => i >= PAST_BARS && i + 1440 < bars1m.length);
+    if (candidates.length > 0) {
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      curIdx1m = pick;
+    } else {
+      curIdx1m = Math.min(PAST_BARS, bars1m.length - 1);
+    }
     renderBars();
   });
 
@@ -206,6 +215,7 @@ function renderBars() {
   const bar = bars1m[curIdx1m];
   document.getElementById('cur-time').textContent =
     new Date(bar.t * 1000).toLocaleString('ja-JP', { timeZone:'UTC', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  livePrice = bar.c;
   document.getElementById('cur-price').textContent = bar.c.toFixed(3);
   updatePnL(bar.c);
 }
@@ -225,13 +235,8 @@ const speedEl = document.getElementById('speed');
 
 btnPlay.addEventListener('click', () => {
   playing = !playing;
-  btnPlay.textContent = playing ? '⏸ 停止' : '▶ 再生';
+  btnPlay.textContent = playing ? '⏸' : '▶';
   if (playing) startPlay(); else stopPlay();
-});
-
-document.getElementById('btn-step').addEventListener('click', () => {
-  stopPlay(); playing = false; btnPlay.textContent = '▶ 再生';
-  advance(1);
 });
 
 // ===== 擬似ティック生成（ブラウン橋 + ボラクラスタリング）=====
@@ -302,6 +307,7 @@ function generateTicks(bar, numTicks) {
 
 let tickQueue  = []; // 現在バーの擬似ティックキュー
 let tickTimer  = null;
+let livePrice  = 0;  // ティック再生中のリアルタイム価格
 
 function flushTicks() { clearInterval(tickTimer); tickTimer = null; tickQueue = []; }
 
@@ -333,6 +339,7 @@ function startTickPlay(bar, onDone) {
   tickTimer = setInterval(() => {
     if (i >= tickQueue.length) { flushTicks(); onDone(); return; }
     const price = tickQueue[i++];
+    livePrice = price;
     if (price > tickH) tickH = price;
     if (price < tickL) tickL = price;
     const partial = { t: baseBar.t, o: baseBar.o, h: tickH, l: tickL, c: price };
@@ -400,7 +407,7 @@ document.getElementById('btn-close').addEventListener('click', () => {
   // 全ポジションを決済して確定損益に加算
   for (const p of positions) {
     const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
-    realizedPnL += diff * p.lot * 5000;
+    realizedPnL += diff * p.lot * 100;
   }
   positions = [];
   updatePnL(cur);
@@ -410,23 +417,28 @@ function calcFloat(cur) {
   let f = 0;
   for (const p of positions) {
     const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
-    f += diff * p.lot * 5000;
+    f += diff * p.lot * 100;
   }
   return f;
 }
 
-function fmt(v) { return `${v >= 0 ? '+' : ''}${v.toFixed(0)}`; }
+const JPY_RATE = 160;
+function fmtJpy(v) {
+  const jpy = v * JPY_RATE;
+  return `${jpy >= 0 ? '+' : ''}${Math.round(jpy).toLocaleString()}円`;
+}
+function fmtUsd(v) { return `${v >= 0 ? '+' : ''}${v.toFixed(2)}$`; }
 
 function updatePnL(cur) {
   const floatPnL = calcFloat(cur);
   const totalPnL = realizedPnL + floatPnL;
 
   const fe = document.getElementById('pnl-float');
-  fe.textContent = `含み: ${fmt(floatPnL)}`;
+  fe.textContent = `含み: ${fmtJpy(floatPnL)}`;
   fe.style.color  = floatPnL >= 0 ? '#26a69a' : '#ef5350';
 
   const te = document.getElementById('pnl-total');
-  te.textContent = `確定+含み: ${fmt(totalPnL)}`;
+  te.textContent = `確定+含み: ${fmtJpy(totalPnL)}`;
   te.style.color  = totalPnL >= 0 ? '#26a69a' : '#ef5350';
 
   updatePosDisplay(cur);
@@ -436,15 +448,15 @@ function updatePosDisplay(cur) {
   const el = document.getElementById('positions');
   const info = document.getElementById('pos-info');
   if (positions.length === 0) {
-    el.innerHTML = `<span style="color:#666">ポジションなし</span>　<span style="color:#aaa">確定: ${fmt(realizedPnL)} USD</span>`;
+    el.innerHTML = `<span style="color:#666">ポジションなし</span>　<span style="color:#aaa">確定: ${fmtJpy(realizedPnL)}</span>`;
     info.textContent = '';
     return;
   }
   el.innerHTML = positions.map(p => {
     const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
-    const pnl  = diff * p.lot * 5000;
-    return `<span style="color:${pnl>=0?'#26a69a':'#ef5350'}">[${p.id}] ${p.type} ${p.lot} @ ${p.price.toFixed(3)} → ${fmt(pnl)}</span>`;
-  }).join('  ') + `　<span style="color:#aaa;font-size:11px">確定累計: ${fmt(realizedPnL)}</span>`;
+    const pnl  = diff * p.lot * 100;
+    return `<span style="color:${pnl>=0?'#26a69a':'#ef5350'}">[${p.id}] ${p.type} ${p.lot} @ ${p.price.toFixed(2)} → ${fmtJpy(pnl)}</span>`;
+  }).join('  ') + `　<span style="color:#aaa;font-size:11px">確定累計: ${fmtJpy(realizedPnL)}</span>`;
   info.textContent = `${positions.length}件`;
 }
 
@@ -611,7 +623,7 @@ function drawHandles() {
 
 function drawPositionLines() {
   if (positions.length === 0) return;
-  const cur = bars1m[curIdx1m]?.c ?? 0;
+  const cur = livePrice || bars1m[curIdx1m]?.c || 0;
   positions.forEach(p => {
     const y = priceToY(p.price);
     if (y === null || y < 0 || y > fiboCanvas.height) return;
@@ -631,9 +643,8 @@ function drawPositionLines() {
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.9;
     ctx.font = 'bold 11px monospace';
-    const pnl  = diff * p.lot * 5000;
-    const sign = pnl >= 0 ? '+' : '';
-    const label = `${p.type}  ${sign}${pnl.toFixed(0)} USD`;
+    const pnl  = diff * p.lot * 100;
+    const label = `${p.type}  ${fmtJpy(pnl)}`;
     ctx.font = 'bold 12px monospace';
     const tw = ctx.measureText(label).width;
     const lx = (chartDiv.clientWidth - tw) / 2 - 4;
