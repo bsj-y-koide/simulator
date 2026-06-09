@@ -82,6 +82,7 @@ input[type=range] { width: 100px; accent-color: #26a69a; }
   <div id="row1">
     <span id="cur-time" style="display:none">--</span>
     <span id="cur-price" style="display:none">--</span>
+    <a href="index.html" style="background:#21262d;color:#e6edf3;font-size:11px;text-decoration:none;padding:3px 8px;border-radius:4px;border:1px solid #30363d">TOP</a>
     <span id="pnl-float">含み: ±0</span>
     <span id="pnl-total">確定+含み: ±0</span>
     <button id="btn-play">▶</button>
@@ -122,7 +123,7 @@ const chart = klinecharts.init('chart', {
   styles: {
     candle: {
       bar: { upColor: '#26a69a', downColor: '#ef5350', upBorderColor: '#26a69a', downBorderColor: '#ef5350', upWickColor: '#26a69a', downWickColor: '#ef5350' },
-      priceMark: { last: { show: true } },
+      priceMark: { last: { show: false } },
       tooltip: { showRule: 'none' }
     },
     grid: { horizontal: { color: '#2a2a3a' }, vertical: { color: '#2a2a3a' } },
@@ -179,10 +180,70 @@ function getPartialBar(idx) {
   return bar;
 }
 
-fetch('ohlc_1m.json.gz')
-  .then(r => new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).json())
-  .then(data => {
-    bars1m = data;
+// ===== IndexedDB =====
+const DB_NAME = 'TradingSimDB';
+const DB_VER  = 2;
+let db = null;
+function openDB() {
+  return new Promise((resolve) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('trades')) {
+        const ts = d.createObjectStore('trades', { keyPath: 'id', autoIncrement: true });
+        ts.createIndex('sessionId', 'sessionId');
+        ts.createIndex('closeTime', 'closeTime');
+      }
+      if (!d.objectStoreNames.contains('sessions')) {
+        const ss = d.createObjectStore('sessions', { keyPath: 'id' });
+        ss.createIndex('startDate', 'startDate');
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => { console.error('DB error:', e.target.error); resolve(null); };
+    req.onblocked = () => { console.warn('DB blocked'); resolve(null); };
+  });
+}
+function dbPut(store, data) {
+  if (!db) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(data);
+    tx.oncomplete = () => resolve();
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+function dbAdd(store, data) {
+  if (!db) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).add(data);
+    req.onsuccess = () => resolve(req.result);
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+function saveDrawings() {
+  if (!db) return;
+  const tx = db.transaction('sessions', 'readwrite');
+  const store = tx.objectStore('sessions');
+  const req = store.get(sessionId);
+  req.onsuccess = () => {
+    const s = req.result;
+    if (s) {
+      s.drawings = {
+        fibo: fiboSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 })),
+        hline: hlineSaved.map(h => ({ price:h.price })),
+        tline: tlineSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 }))
+      };
+      store.put(s);
+    }
+  };
+}
+
+(async () => {
+  await openDB();
+  const data = await fetch('ohlc_1m.json.gz').then(r => new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).json());
+  bars1m = data;
     // 各取引日の開始位置を収集（日付が変わった最初のバー）
     const dayStarts = [];
     let lastDate = '';
@@ -197,14 +258,54 @@ fetch('ohlc_1m.json.gz')
     // 過去3日分（4320本）さかのぼれる候補だけ残す
     const PAST_BARS = 4320;
     const candidates = dayStarts.filter(i => i >= PAST_BARS && i + 1440 < bars1m.length);
-    if (candidates.length > 0) {
+    // URLパラメータで復習モード対応
+    const urlParams = new URLSearchParams(location.search);
+    const reviewIdx = urlParams.get('startIdx');
+    if (reviewIdx !== null) {
+      curIdx1m = Math.min(parseInt(reviewIdx), bars1m.length - 1);
+    } else if (candidates.length > 0) {
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
       curIdx1m = pick;
     } else {
       curIdx1m = Math.min(PAST_BARS, bars1m.length - 1);
     }
-    renderBars();
-  });
+    sessionStartIdx = curIdx1m;
+    // セッション情報をDBに保存
+    const startBar = bars1m[curIdx1m];
+    const startDate = new Date(startBar.t * 1000).toISOString();
+    dbPut('sessions', { id: sessionId, startIdx: curIdx1m, startDate, startPrice: startBar.c, playedAt: new Date().toISOString(), trades: 0, totalPnL: 0, memo: '' }).catch(() => {});
+
+    // 復習モード: 前回の描画データを復元
+    const reviewSession = urlParams.get('session');
+    if (reviewSession && db) {
+      try {
+        // 描画データ復元
+        const tx = db.transaction(['sessions', 'trades'], 'readonly');
+        const sReq = tx.objectStore('sessions').get(parseInt(reviewSession));
+        const tIdx = tx.objectStore('trades').index('sessionId');
+        const tReq = tIdx.getAll(parseInt(reviewSession));
+        let loaded = 0;
+        function checkDone() { if (++loaded >= 2) renderBars(); }
+        sReq.onsuccess = () => {
+          const s = sReq.result;
+          if (s && s.drawings) {
+            fiboSaved = s.drawings.fibo || [];
+            hlineSaved = s.drawings.hline || [];
+            tlineSaved = s.drawings.tline || [];
+          }
+          checkDone();
+        };
+        tReq.onsuccess = () => {
+          tradeHistory = tReq.result || [];
+          checkDone();
+        };
+        sReq.onerror = () => checkDone();
+        tReq.onerror = () => checkDone();
+      } catch(e) { renderBars(); }
+    } else {
+      renderBars();
+    }
+})();
 
 function toKLine(b) {
   return { timestamp: b.t * 1000, open: b.o, high: b.h, low: b.l, close: b.c, volume: 0 };
@@ -391,33 +492,79 @@ function advance(n) {
 let positions   = [];
 let posId       = 0;
 let realizedPnL = 0; // 確定済み損益
+let sessionStartIdx = 0; // セッション開始時のバーインデックス
+let sessionId = Date.now(); // セッション識別子
+let tradeHistory = []; // このセッションの全トレード履歴
 
+// ===== IndexedDB =====
+const HALF_SPREAD = 0.2; // 2pips = $0.20（片側）、合計4pips
 function getLot() { return parseFloat(document.getElementById('lot').value); }
 
 document.getElementById('btn-buy').addEventListener('click', () => {
-  const price = bars1m[curIdx1m].c;
-  positions.push({ id: ++posId, type: 'BUY', price, lot: getLot() });
-  updatePnL(price);
+  const mid = livePrice || bars1m[curIdx1m].c;
+  const price = mid + HALF_SPREAD; // Askで約定
+  const entryTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
+  positions.push({ id: ++posId, type: 'BUY', price, lot: getLot(), entryTime, entryIdx: curIdx1m });
+  updatePnL(mid);
 });
 document.getElementById('btn-sell').addEventListener('click', () => {
-  const price = bars1m[curIdx1m].c;
-  positions.push({ id: ++posId, type: 'SELL', price, lot: getLot() });
-  updatePnL(price);
+  const mid = livePrice || bars1m[curIdx1m].c;
+  const price = mid - HALF_SPREAD; // Bidで約定
+  const entryTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
+  positions.push({ id: ++posId, type: 'SELL', price, lot: getLot(), entryTime, entryIdx: curIdx1m });
+  updatePnL(mid);
 });
 document.getElementById('btn-close').addEventListener('click', () => {
-  const cur = bars1m[curIdx1m].c;
-  // 全ポジションを決済して確定損益に加算
+  const mid = livePrice || bars1m[curIdx1m].c;
+  const closeTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
+  // 全ポジションを決済して確定損益に加算 + DB保存
   for (const p of positions) {
+    const cur = p.type === 'BUY' ? mid - HALF_SPREAD : mid + HALF_SPREAD; // BUY→Bidで決済、SELL→Askで決済
     const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
-    realizedPnL += diff * p.lot * 100;
+    const pnlUsd = diff * p.lot * 100;
+    realizedPnL += pnlUsd;
+    const trade = {
+      sessionId, type: p.type, lot: p.lot,
+      entryPrice: p.price, closePrice: cur,
+      entryTime: p.entryTime, closeTime,
+      entryIdx: p.entryIdx, closeIdx: curIdx1m,
+      pnlUsd, pnlJpy: Math.round(pnlUsd * JPY_RATE),
+      pips: Math.round(diff * 10) / 10,
+      holdBars: curIdx1m - p.entryIdx
+    };
+    tradeHistory.push(trade);
+    if (db) dbAdd('trades', trade);
+  }
+  // セッション情報を更新
+  if (db) {
+    const tx = db.transaction('sessions', 'readwrite');
+    const store = tx.objectStore('sessions');
+    const getReq = store.get(sessionId);
+    getReq.onsuccess = () => {
+      const existing = getReq.result || {};
+      store.put({
+        ...existing, id: sessionId, startIdx: sessionStartIdx,
+        startDate: new Date(bars1m[sessionStartIdx].t * 1000).toISOString(),
+        startPrice: bars1m[sessionStartIdx].c,
+        trades: tradeHistory.length,
+        totalPnL: realizedPnL,
+        totalPnLJpy: Math.round(realizedPnL * JPY_RATE),
+        drawings: {
+          fibo: fiboSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 })),
+          hline: hlineSaved.map(h => ({ price:h.price })),
+          tline: tlineSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 }))
+        }
+      });
+    };
   }
   positions = [];
   updatePnL(cur);
 });
 
-function calcFloat(cur) {
+function calcFloat(mid) {
   let f = 0;
   for (const p of positions) {
+    const cur = p.type === 'BUY' ? mid - HALF_SPREAD : mid + HALF_SPREAD;
     const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
     f += diff * p.lot * 100;
   }
@@ -608,6 +755,122 @@ function drawOneFibo(p1, p2, t1, t2, alpha = 1.0, rawX1 = null, rawX2 = null) {
 const HANDLE_R = 6; // ハンドル半径(px)
 
 
+// 決済済みトレードのエントリー・決済マーカーを描画
+// Bid/Ask価格ラベル（Y軸右側のみ）
+function drawBidAskLines() {
+  const mid = livePrice || bars1m[curIdx1m]?.c || 0;
+  if (mid === 0) return;
+  const bid = mid - HALF_SPREAD;
+  const ask = mid + HALF_SPREAD;
+  const w = chartDiv.clientWidth;
+
+  const bidY = priceToY(bid);
+  const askY = priceToY(ask);
+
+  [{ price: bid, color: '#ef5350', y: bidY },
+   { price: ask, color: '#26a69a', y: askY }].forEach(({ price, color, y }) => {
+    if (y === null || y < 0 || y > chartDiv.clientHeight) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // ラベル（重ならないよう調整）
+  if (bidY !== null && askY !== null) {
+    ctx.save();
+    ctx.font = 'bold 10px monospace';
+    const lblH = 12;
+    let by = bidY, ay = askY;
+    // 近すぎる場合は上下にずらす
+    if (Math.abs(by - ay) < lblH + 2) {
+      const mid2 = (by + ay) / 2;
+      ay = mid2 - lblH / 2 - 1;
+      by = mid2 + lblH / 2 + 1;
+    }
+    [{ price: bid, color: '#ef5350', y: by },
+     { price: ask, color: '#26a69a', y: ay }].forEach(({ price, color, y }) => {
+      const label = price.toFixed(2);
+      const tw = ctx.measureText(label).width;
+      const lx = w - tw - 4;
+      ctx.fillStyle = color;
+      ctx.fillRect(lx - 2, y - 6, tw + 4, lblH);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, lx, y + 3);
+    });
+    ctx.restore();
+  }
+}
+
+function drawTradeMarkers() {
+  if (tradeHistory.length === 0) return;
+  tradeHistory.forEach(t => {
+    const entryX = timeToX(t.entryTime ? new Date(t.entryTime).getTime() : null);
+    const closeX = timeToX(t.closeTime ? new Date(t.closeTime).getTime() : null);
+    const entryY = priceToY(t.entryPrice);
+    const closeY = priceToY(t.closePrice);
+    const isBuy = t.type === 'BUY';
+    const profit = t.pnlUsd >= 0;
+
+    // エントリー→決済の接続線
+    if (entryX !== null && closeX !== null && entryY !== null && closeY !== null) {
+      ctx.save();
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = profit ? '#26a69a' : '#ef5350';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(entryX, entryY);
+      ctx.lineTo(closeX, closeY);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // エントリーマーカー（▲/▼）
+    if (entryX !== null && entryY !== null) {
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = isBuy ? '#1565c0' : '#b71c1c';
+      ctx.beginPath();
+      if (isBuy) {
+        ctx.moveTo(entryX, entryY + 6);
+        ctx.lineTo(entryX - 5, entryY + 14);
+        ctx.lineTo(entryX + 5, entryY + 14);
+      } else {
+        ctx.moveTo(entryX, entryY - 6);
+        ctx.lineTo(entryX - 5, entryY - 14);
+        ctx.lineTo(entryX + 5, entryY - 14);
+      }
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // 決済マーカー（×）
+    if (closeX !== null && closeY !== null) {
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = profit ? '#26a69a' : '#ef5350';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(closeX - 5, closeY - 5);
+      ctx.lineTo(closeX + 5, closeY + 5);
+      ctx.moveTo(closeX + 5, closeY - 5);
+      ctx.lineTo(closeX - 5, closeY + 5);
+      ctx.stroke();
+      // 損益ラベル
+      ctx.font = 'bold 10px monospace';
+      ctx.fillStyle = profit ? '#26a69a' : '#ef5350';
+      ctx.fillText(fmtJpy(t.pnlUsd), closeX + 8, closeY + 4);
+      ctx.restore();
+    }
+  });
+}
+
 function drawPositionLines() {
   if (positions.length === 0) return;
   const cur = livePrice || bars1m[curIdx1m]?.c || 0;
@@ -716,8 +979,19 @@ function drawAllHandles() {
   });
 }
 
+let _drawingsDirty = false;
+let _saveTimer = null;
+function markDrawingsDirty() {
+  if (_drawingsDirty) return;
+  _drawingsDirty = true;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => { _drawingsDirty = false; saveDrawings(); }, 1000);
+}
+
 function redrawFibo() {
   ctx.clearRect(0, 0, fiboCanvas.width, fiboCanvas.height);
+  drawBidAskLines();
+  drawTradeMarkers();
   drawPositionLines();
   hlineSaved.forEach(h => drawOneHLine(h.price));
   tlineSaved.forEach(f => drawOneTLine(f.p1, f.p2, f.t1, f.t2));
@@ -841,7 +1115,7 @@ fiboCanvas.addEventListener('mousedown', e => {
   } else if (curTool === 'hline') {
     const p = pixelToPrice(e.offsetY);
     if (p !== null) {
-      hlineSaved.push({ price: p });
+      hlineSaved.push({ price: p }); markDrawingsDirty();
       editMode = true; editTarget = { type: 'hline', idx: hlineSaved.length - 1 };
       curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       redrawFibo();
@@ -896,18 +1170,18 @@ document.addEventListener('mouseup', e => {
   if (editHandle) {
     editHandle = null;
     fiboCanvas.style.cursor = 'crosshair';
-    redrawFibo();
+    markDrawingsDirty(); redrawFibo();
   } else if (dragging) {
     if (curTool === 'tline') {
       if (tlineDrag && Math.abs(tlineDrag.p2 - tlineDrag.p1) > 0.001) {
-        tlineSaved.push({ p1: tlineDrag.p1, p2: tlineDrag.p2, t1: tlineDrag.t1, t2: tlineDrag.t2 });
+        tlineSaved.push({ p1: tlineDrag.p1, p2: tlineDrag.p2, t1: tlineDrag.t1, t2: tlineDrag.t2 }); markDrawingsDirty();
         editMode = true; editTarget = { type: 'tline', idx: tlineSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }
       tlineDrag = null;
     } else if (curTool === 'fibo') {
       if (fiboDrag && Math.abs(fiboDrag.p2 - fiboDrag.p1) > 0.001) {
-        fiboSaved.push({ p1: fiboDrag.p1, p2: fiboDrag.p2, t1: fiboDrag.t1, t2: fiboDrag.t2, rx1: fiboDrag.rx1, rx2: fiboDrag.rx2 });
+        fiboSaved.push({ p1: fiboDrag.p1, p2: fiboDrag.p2, t1: fiboDrag.t1, t2: fiboDrag.t2, rx1: fiboDrag.rx1, rx2: fiboDrag.rx2 }); markDrawingsDirty();
         editMode = true; editTarget = { type: 'fibo', idx: fiboSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }
@@ -1010,7 +1284,7 @@ document.getElementById('dmenu-del').addEventListener('click', () => {
   if (deleteTargetIdx >= 0) {
     const col = deleteTargetType === 'hline' ? hlineSaved : deleteTargetType === 'tline' ? tlineSaved : fiboSaved;
     col.splice(deleteTargetIdx, 1);
-    redrawFibo();
+    markDrawingsDirty(); redrawFibo();
   }
   hideDeleteMenu();
 });
@@ -1057,7 +1331,7 @@ fiboCanvas.addEventListener('touchstart', e => {
   } else if (curTool === 'hline') {
     const p = pixelToPrice(y);
     if (p !== null) {
-      hlineSaved.push({ price: p });
+      hlineSaved.push({ price: p }); markDrawingsDirty();
       editMode = true; editTarget = { type: 'hline', idx: hlineSaved.length - 1 };
       curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       redrawFibo();
@@ -1102,18 +1376,18 @@ fiboCanvas.addEventListener('touchmove', e => {
 fiboCanvas.addEventListener('touchend', e => {
   if (!fiboActive) return;
   clearTimeout(longPressTimer);
-  if (editHandle) { editHandle = null; redrawFibo(); }
+  if (editHandle) { editHandle = null; markDrawingsDirty(); redrawFibo(); }
   else if (touchDragging) {
     if (curTool === 'tline') {
       if (tlineDrag && Math.abs(tlineDrag.p2 - dragStartPrice) > 0.001) {
-        tlineSaved.push({ ...tlineDrag });
+        tlineSaved.push({ ...tlineDrag }); markDrawingsDirty();
         editMode = true; editTarget = { type: 'tline', idx: tlineSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }
       tlineDrag = null;
     } else {
       if (fiboDrag && Math.abs(fiboDrag.p2 - dragStartPrice) > 0.001) {
-        fiboSaved.push({ ...fiboDrag });
+        fiboSaved.push({ ...fiboDrag }); markDrawingsDirty();
         editMode = true; editTarget = { type: 'fibo', idx: fiboSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }

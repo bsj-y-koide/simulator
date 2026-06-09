@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gold Trading Simulator</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1117; color: #e6edf3; font-family: -apple-system, sans-serif; min-height: 100dvh; }
+a { color: #58a6ff; text-decoration: none; }
+
+.container { max-width: 640px; margin: 0 auto; padding: 16px; }
+
+h1 { font-size: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+h1 span { font-size: 24px; }
+h2 { font-size: 15px; color: #8b949e; margin: 20px 0 8px; border-bottom: 1px solid #21262d; padding-bottom: 4px; }
+
+/* 起動ボタン */
+.launch-btn {
+  display: block; width: 100%; padding: 14px; margin: 12px 0;
+  background: #1b5e20; color: #fff; border: none; border-radius: 8px;
+  font-size: 16px; font-weight: bold; cursor: pointer; text-align: center;
+}
+.launch-btn:active { background: #2e7d32; }
+
+/* サマリーカード */
+.summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0; }
+.stat { background: #161b22; border: 1px solid #21262d; border-radius: 8px; padding: 10px; text-align: center; }
+.stat .label { font-size: 11px; color: #8b949e; }
+.stat .value { font-size: 18px; font-weight: bold; margin-top: 2px; }
+.stat .value.plus { color: #26a69a; }
+.stat .value.minus { color: #ef5350; }
+
+/* セッション一覧 */
+.session-list { margin: 8px 0; }
+.session-item {
+  background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+  padding: 10px 12px; margin: 6px 0; display: flex; align-items: center; gap: 10px;
+}
+.session-item .date { font-size: 12px; color: #8b949e; min-width: 80px; }
+.session-item .pnl { font-size: 15px; font-weight: bold; min-width: 90px; text-align: right; }
+.session-item .trades { font-size: 11px; color: #8b949e; }
+.session-item .actions { margin-left: auto; display: flex; gap: 6px; }
+.session-item .actions button {
+  background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 4px;
+  padding: 4px 8px; font-size: 11px; cursor: pointer;
+}
+.session-item .actions button:hover { background: #30363d; }
+.session-item .memo-text { font-size: 11px; color: #8b949e; flex-basis: 100%; margin-top: 4px; }
+
+/* 苦手分析 */
+.weakness-list { margin: 8px 0; }
+.weakness-item {
+  background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+  padding: 8px 12px; margin: 4px 0; display: flex; align-items: center; gap: 10px;
+  font-size: 13px;
+}
+.weakness-item .rank { color: #ef5350; font-weight: bold; min-width: 24px; }
+.weakness-item .info { flex: 1; }
+.weakness-item .loss { color: #ef5350; font-weight: bold; }
+
+/* メモ編集 */
+.memo-modal {
+  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7); z-index: 100; align-items: center; justify-content: center;
+}
+.memo-modal.show { display: flex; }
+.memo-box {
+  background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+  padding: 16px; width: 90%; max-width: 400px;
+}
+.memo-box textarea {
+  width: 100%; height: 100px; background: #0d1117; color: #e6edf3;
+  border: 1px solid #30363d; border-radius: 6px; padding: 8px; font-size: 14px;
+  resize: vertical;
+}
+.memo-box .btns { display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end; }
+.memo-box .btns button {
+  padding: 6px 16px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer;
+}
+.memo-box .btn-save { background: #1565c0; color: #fff; }
+.memo-box .btn-cancel { background: #333; color: #aaa; }
+
+.empty { color: #484f58; font-size: 13px; text-align: center; padding: 24px; }
+
+/* タブ */
+.tabs { display: flex; gap: 0; margin: 16px 0 8px; border-bottom: 1px solid #21262d; }
+.tab { padding: 8px 16px; font-size: 13px; color: #8b949e; cursor: pointer; border-bottom: 2px solid transparent; }
+.tab.active { color: #e6edf3; border-bottom-color: #f57f17; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1><span>🏆</span> Gold Trading Simulator</h1>
+
+  <a href="simulator.html" class="launch-btn">▶ シミュレーター起動</a>
+
+  <h2>成績サマリー</h2>
+  <div class="summary">
+    <div class="stat"><div class="label">通算損益</div><div class="value" id="s-pnl">-</div></div>
+    <div class="stat"><div class="label">勝率</div><div class="value" id="s-winrate">-</div></div>
+    <div class="stat"><div class="label">PF</div><div class="value" id="s-pf">-</div></div>
+  </div>
+  <div class="summary">
+    <div class="stat"><div class="label">総トレード</div><div class="value" id="s-count">-</div></div>
+    <div class="stat"><div class="label">平均利益</div><div class="value" id="s-avgwin">-</div></div>
+    <div class="stat"><div class="label">平均損失</div><div class="value" id="s-avgloss">-</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="sessions">セッション履歴</div>
+    <div class="tab" data-tab="weakness">苦手分析</div>
+  </div>
+
+  <div id="tab-sessions" class="tab-content active">
+    <div id="session-list" class="session-list">
+      <div class="empty">まだセッションがありません。<br>シミュレーターで練習してみましょう！</div>
+    </div>
+  </div>
+
+  <div id="tab-weakness" class="tab-content">
+    <div id="weakness-list" class="weakness-list">
+      <div class="empty">データが蓄積されると苦手パターンが表示されます。</div>
+    </div>
+  </div>
+</div>
+
+<!-- メモ編集モーダル -->
+<div class="memo-modal" id="memo-modal">
+  <div class="memo-box">
+    <div style="font-size:14px;font-weight:bold;margin-bottom:8px">振り返りメモ</div>
+    <textarea id="memo-text" placeholder="エントリー根拠、反省点、次回改善点..."></textarea>
+    <div class="btns">
+      <button class="btn-cancel" id="memo-cancel">キャンセル</button>
+      <button class="btn-save" id="memo-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="container" style="padding-top:0">
+  <div style="margin-top:40px;padding-top:16px;border-top:1px solid #21262d;text-align:center">
+    <button id="btn-reset" style="background:none;border:1px solid #30363d;color:#484f58;border-radius:6px;padding:6px 16px;font-size:11px;cursor:pointer">全データリセット</button>
+  </div>
+</div>
+
+<script>
+// ===== IndexedDB =====
+const DB_NAME = 'TradingSimDB';
+const DB_VER  = 2;
+let db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if (!d.objectStoreNames.contains('trades')) {
+        const ts = d.createObjectStore('trades', { keyPath: 'id', autoIncrement: true });
+        ts.createIndex('sessionId', 'sessionId');
+        ts.createIndex('closeTime', 'closeTime');
+      }
+      if (!d.objectStoreNames.contains('sessions')) {
+        const ss = d.createObjectStore('sessions', { keyPath: 'id' });
+        ss.createIndex('startDate', 'startDate');
+      }
+    };
+    req.onsuccess = e => { db = e.target.result; resolve(db); };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function dbGetAll(store) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+function dbPut(store, data) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put(data);
+    tx.oncomplete = () => resolve();
+    tx.onerror = e => reject(e.target.error);
+  });
+}
+
+const JPY_RATE = 160;
+function fmtJpy(v) {
+  const jpy = Math.round(v * JPY_RATE);
+  return `${jpy >= 0 ? '+' : ''}${jpy.toLocaleString()}円`;
+}
+
+function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ===== データ読み込み・表示 =====
+async function loadData() {
+  await openDB();
+  const sessions = await dbGetAll('sessions');
+  const trades   = await dbGetAll('trades');
+
+  // サマリー計算
+  if (trades.length > 0) {
+    const wins = trades.filter(t => t.pnlUsd > 0);
+    const losses = trades.filter(t => t.pnlUsd < 0);
+    const totalPnl = trades.reduce((s, t) => s + t.pnlUsd, 0);
+    const grossWin = wins.reduce((s, t) => s + t.pnlUsd, 0);
+    const grossLoss = Math.abs(losses.reduce((s, t) => s + t.pnlUsd, 0));
+    const winRate = (wins.length / trades.length * 100).toFixed(1);
+    const pf = grossLoss > 0 ? (grossWin / grossLoss).toFixed(2) : '-';
+    const avgWin = wins.length > 0 ? grossWin / wins.length : 0;
+    const avgLoss = losses.length > 0 ? grossLoss / losses.length : 0;
+
+    setVal('s-pnl', fmtJpy(totalPnl), totalPnl >= 0);
+    setVal('s-winrate', winRate + '%', parseFloat(winRate) >= 50);
+    setVal('s-pf', pf, parseFloat(pf) >= 1);
+    setVal('s-count', trades.length, true);
+    setVal('s-avgwin', fmtJpy(avgWin), true);
+    setVal('s-avgloss', fmtJpy(-avgLoss), false);
+  }
+
+  // セッション一覧（新しい順）
+  const sorted = sessions.filter(s => s.trades > 0).sort((a, b) => b.id - a.id);
+  const listEl = document.getElementById('session-list');
+  if (sorted.length === 0) return;
+
+  // セッションIDごとのトレードをグループ化
+  const tradesBySession = {};
+  trades.forEach(t => {
+    if (!tradesBySession[t.sessionId]) tradesBySession[t.sessionId] = [];
+    tradesBySession[t.sessionId].push(t);
+  });
+
+  listEl.innerHTML = sorted.map(s => {
+    const chartDate = new Date(s.startDate);
+    const dayNames = ['日','月','火','水','木','金','土'];
+    const chartDay = dayNames[chartDate.getUTCDay()];
+    const chartStr = chartDate.toLocaleDateString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', timeZone:'UTC' }) + `(${chartDay})`;
+    const playedDate = s.playedAt ? new Date(s.playedAt) : new Date(s.id);
+    const playedStr = playedDate.toLocaleDateString('ja-JP', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+    const pnlJpy = Math.round((s.totalPnL || 0) * JPY_RATE);
+    const cls = pnlJpy >= 0 ? 'plus' : 'minus';
+    const sTrades = tradesBySession[s.id] || [];
+    const tradeRows = sTrades.map((t, i) => {
+      const tPnlJpy = Math.round(t.pnlUsd * JPY_RATE);
+      const tCls = tPnlJpy >= 0 ? '#26a69a' : '#ef5350';
+      const entryP = t.entryPrice ? t.entryPrice.toFixed(2) : '-';
+      const closeP = t.closePrice ? t.closePrice.toFixed(2) : '-';
+      return `<div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:11px;border-top:1px solid #1a1f25">
+        <span style="color:${t.type==='BUY'?'#42a5f5':'#ef5350'};min-width:30px">${t.type}</span>
+        <span style="color:#8b949e">${t.lot}</span>
+        <span style="color:#e6edf3">${entryP}</span>
+        <span style="color:#8b949e">→</span>
+        <span style="color:#e6edf3">${closeP}</span>
+        <span style="color:${tCls};margin-left:auto;font-weight:bold">${tPnlJpy>=0?'+':''}${tPnlJpy.toLocaleString()}円</span>
+      </div>`;
+    }).join('');
+    return `
+      <div class="session-item" data-id="${s.id}" style="flex-wrap:wrap">
+        <div style="display:flex;gap:12px;align-items:center;width:100%;margin-bottom:4px">
+          <div style="font-size:11px;color:#8b949e">挑戦日: ${playedStr}</div>
+          <div style="font-size:11px;color:#58a6ff">GOLD ${chartStr}</div>
+          <div class="actions" style="margin-left:auto">
+            <button onclick="openMemo(${s.id})">メモ</button>
+            <button onclick="reviewSession(${s.id}, ${s.startIdx})">復習</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;width:100%">
+          <div class="pnl ${cls}">${pnlJpy >= 0 ? '+' : ''}${pnlJpy.toLocaleString()}円</div>
+          <div class="trades">${s.trades}回</div>
+          ${sTrades.length > 0 ? `<button onclick="toggleDetail(this)" style="background:none;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer;margin-left:auto">詳細 ▼</button>` : ''}
+        </div>
+        ${s.memo ? `<div class="memo-text">${escHtml(s.memo)}</div>` : ''}
+        ${sTrades.length > 0 ? `<div class="trade-detail" style="display:none;width:100%;margin-top:4px;padding:4px 0">${tradeRows}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  // 苦手分析
+  renderWeakness(sessions, trades);
+}
+
+function setVal(id, val, positive) {
+  const el = document.getElementById(id);
+  el.textContent = val;
+  el.className = 'value ' + (positive ? 'plus' : 'minus');
+}
+
+// ===== 苦手分析 =====
+function renderWeakness(sessions, trades) {
+  const el = document.getElementById('weakness-list');
+
+  // セッション別の損失ランキング
+  const lossSessions = sessions
+    .filter(s => s.trades > 0 && (s.totalPnL || 0) < 0)
+    .sort((a, b) => a.totalPnL - b.totalPnL)
+    .slice(0, 10);
+
+  if (lossSessions.length === 0) {
+    el.innerHTML = '<div class="empty">負けセッションがありません。素晴らしい！</div>';
+    return;
+  }
+
+  // 曜日別の勝率
+  const dayStats = {};
+  trades.forEach(t => {
+    const day = new Date(t.closeTime).getUTCDay();
+    if (!dayStats[day]) dayStats[day] = { wins: 0, total: 0, pnl: 0 };
+    dayStats[day].total++;
+    dayStats[day].pnl += t.pnlUsd;
+    if (t.pnlUsd > 0) dayStats[day].wins++;
+  });
+  const dayNames = ['日','月','火','水','木','金','土'];
+  const worstDay = Object.entries(dayStats).sort((a, b) => a[1].pnl - b[1].pnl)[0];
+
+  let html = '<div style="font-size:12px;color:#8b949e;margin-bottom:8px">負けが大きいセッション</div>';
+  html += lossSessions.map((s, i) => {
+    const d = new Date(s.startDate);
+    const dateStr = d.toLocaleDateString('ja-JP', { month:'2-digit', day:'2-digit', timeZone:'UTC' });
+    const pnlJpy = Math.round(s.totalPnL * JPY_RATE);
+    return `
+      <div class="weakness-item">
+        <div class="rank">#${i+1}</div>
+        <div class="info">${dateStr} (${s.trades}回)</div>
+        <div class="loss">${pnlJpy.toLocaleString()}円</div>
+        <button onclick="reviewSession(${s.id}, ${s.startIdx})" style="background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">復習</button>
+      </div>`;
+  }).join('');
+
+  if (worstDay) {
+    const wd = worstDay[1];
+    const wr = (wd.wins / wd.total * 100).toFixed(0);
+    html += `<div style="margin-top:12px;font-size:12px;color:#8b949e">苦手な曜日: <b style="color:#ef5350">${dayNames[worstDay[0]]}曜日</b>（勝率${wr}%、${fmtJpy(wd.pnl)}）</div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+// ===== トレード詳細表示 =====
+function toggleDetail(btn) {
+  const detail = btn.closest('.session-item').querySelector('.trade-detail');
+  if (detail.style.display === 'none') {
+    detail.style.display = 'block';
+    btn.textContent = '詳細 ▲';
+  } else {
+    detail.style.display = 'none';
+    btn.textContent = '詳細 ▼';
+  }
+}
+
+// ===== 復習モード =====
+function reviewSession(sid, startIdx) {
+  location.href = `simulator.html?startIdx=${startIdx}&session=${sid}`;
+}
+
+// ===== メモ =====
+let memoTargetId = null;
+function openMemo(sessionId) {
+  memoTargetId = sessionId;
+  document.getElementById('memo-modal').classList.add('show');
+  // 既存メモを読み込み
+  const tx = db.transaction('sessions', 'readonly');
+  const req = tx.objectStore('sessions').get(sessionId);
+  req.onsuccess = () => {
+    document.getElementById('memo-text').value = req.result?.memo || '';
+  };
+}
+document.getElementById('memo-cancel').addEventListener('click', () => {
+  document.getElementById('memo-modal').classList.remove('show');
+});
+document.getElementById('memo-save').addEventListener('click', async () => {
+  const tx = db.transaction('sessions', 'readwrite');
+  const store = tx.objectStore('sessions');
+  const req = store.get(memoTargetId);
+  req.onsuccess = () => {
+    const session = req.result;
+    session.memo = document.getElementById('memo-text').value;
+    store.put(session);
+    document.getElementById('memo-modal').classList.remove('show');
+    loadData(); // 再表示
+  };
+});
+
+// ===== タブ切り替え =====
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ===== リセット =====
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (!confirm('全てのセッション・トレードデータを削除しますか？\nこの操作は取り消せません。')) return;
+  if (db) db.close();
+  indexedDB.deleteDatabase('TradingSimDB');
+  location.reload();
+});
+
+loadData();
+</script>
+</body>
+</html>
