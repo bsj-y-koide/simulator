@@ -969,28 +969,15 @@ function handleFiboExit(e) {
 document.addEventListener('click', handleFiboExit, true);
 document.addEventListener('touchstart', handleFiboExit, true);
 
-// ===== タッチ→マウス変換（軸スケール＋縦パン用） =====
-// klinecharts v9のY軸/X軸はmouseイベントのみ対応のため、
-// 軸エリアでのタッチをmouseイベントに変換して転送する。
-// また、チャート本体での縦ドラッグもY軸マウスイベントに変換して上下パンを実現する。
+// ===== タッチ→マウス変換（チャート全体） =====
+// klinecharts v9のmouseハンドラはPC同様に上下左右自由に動くが、
+// タッチハンドラは横スクロールのみ。全タッチをマウスイベントに変換する。
 (() => {
-  const XAXIS_H = 30, YAXIS_W = 55;
   let proxyActive = false;
-  let proxyMode = null; // 'axis' | 'vpan'
   let lastTarget = null;
-  let startX = 0, startY = 0;
-  let yAxisX = 0; // Y軸エリアの中央X座標
 
-  function getZone(cx, cy) {
-    const rect = chartDiv.getBoundingClientRect();
-    const x = cx - rect.left, y = cy - rect.top;
-    if (y > rect.height - XAXIS_H) return 'xaxis';
-    if (x > rect.width - YAXIS_W) return 'yaxis';
-    return 'chart';
-  }
-
-  function dispatchMouse(type, clientX, clientY, target) {
-    const el = target || document.elementFromPoint(clientX, clientY) || lastTarget;
+  function dispatchMouse(type, clientX, clientY) {
+    const el = document.elementFromPoint(clientX, clientY) || lastTarget;
     if (!el) return;
     lastTarget = el;
     el.dispatchEvent(new MouseEvent(type, {
@@ -1002,85 +989,30 @@ document.addEventListener('touchstart', handleFiboExit, true);
 
   chartDiv.addEventListener('touchstart', e => {
     if (fiboActive || e.touches.length !== 1) return;
+    e.preventDefault();
+    e.stopPropagation();
+    proxyActive = true;
     const t = e.touches[0];
-    const zone = getZone(t.clientX, t.clientY);
-    startX = t.clientX;
-    startY = t.clientY;
-
-    if (zone === 'xaxis' || zone === 'yaxis') {
-      // 軸エリア直接タッチ → そのままマウスイベントに変換
-      e.preventDefault();
-      e.stopPropagation();
-      proxyActive = true;
-      proxyMode = 'axis';
-      dispatchMouse('mousedown', t.clientX, t.clientY);
-    }
-    // chart本体のタッチはまだ判定保留（moveで縦か横か判定）
+    dispatchMouse('mousedown', t.clientX, t.clientY);
   }, { passive: false, capture: true });
 
-  // チャート本体タッチ → 縦ドラッグ検出用
-  let pendingVPan = false;
-  chartDiv.addEventListener('touchstart', e => {
-    if (fiboActive || proxyActive || e.touches.length !== 1) return;
-    const t = e.touches[0];
-    if (getZone(t.clientX, t.clientY) === 'chart') {
-      pendingVPan = true;
-      startX = t.clientX;
-      startY = t.clientY;
-      // Y軸中央のX座標を計算
-      const rect = chartDiv.getBoundingClientRect();
-      yAxisX = rect.right - YAXIS_W / 2;
-    }
-  }, { passive: true });
-
   document.addEventListener('touchmove', e => {
-    if (proxyActive && proxyMode === 'axis') {
-      e.preventDefault();
-      dispatchMouse('mousemove', e.touches[0].clientX, e.touches[0].clientY);
-      return;
-    }
-    if (proxyActive && proxyMode === 'vpan') {
-      e.preventDefault();
-      // 縦移動をY軸上のマウスイベントとして転送
-      dispatchMouse('mousemove', yAxisX, e.touches[0].clientY);
-      return;
-    }
-    if (pendingVPan) {
-      const t = e.touches[0];
-      const dx = Math.abs(t.clientX - startX);
-      const dy = Math.abs(t.clientY - startY);
-      if (dx + dy > 10) {
-        if (dy > dx * 1.5) {
-          // 縦方向優勢 → 上下パンモードに入る
-          e.preventDefault();
-          pendingVPan = false;
-          proxyActive = true;
-          proxyMode = 'vpan';
-          dispatchMouse('mousedown', yAxisX, startY);
-          dispatchMouse('mousemove', yAxisX, t.clientY);
-        } else {
-          // 横方向 → klinecharts標準スクロールに任せる
-          pendingVPan = false;
-        }
-      }
-    }
+    if (!proxyActive) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    dispatchMouse('mousemove', t.clientX, t.clientY);
   }, { passive: false });
 
   document.addEventListener('touchend', e => {
-    pendingVPan = false;
     if (!proxyActive) return;
-    const t = e.changedTouches[0];
-    const cx = proxyMode === 'vpan' ? yAxisX : t.clientX;
-    dispatchMouse('mouseup', cx, t.clientY);
     proxyActive = false;
-    proxyMode = null;
+    const t = e.changedTouches[0];
+    dispatchMouse('mouseup', t.clientX, t.clientY);
     lastTarget = null;
   }, { passive: true });
 
   document.addEventListener('touchcancel', () => {
-    pendingVPan = false;
     proxyActive = false;
-    proxyMode = null;
     lastTarget = null;
   }, { passive: true });
 })();
