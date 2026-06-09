@@ -85,10 +85,10 @@ input[type=range] { width: 100px; accent-color: #26a69a; }
     <span id="pnl-float">含み: ±0</span>
     <span id="pnl-total">確定+含み: ±0</span>
     <button id="btn-play">▶</button>
-    <div id="speed-wrap">速<input type="range" id="speed" min="1" max="10" value="1"></div>
+    <div id="speed-wrap">速<input type="range" id="speed" min="1" max="10" value="3"></div>
     <select id="tf-select">
-      <option value="1" selected>1m</option>
-      <option value="5">5m</option>
+      <option value="1">1m</option>
+      <option value="5" selected>5m</option>
       <option value="15">15m</option>
       <option value="30">30m</option>
       <option value="60">1h</option>
@@ -137,7 +137,7 @@ new ResizeObserver(() => chart.resize()).observe(document.getElementById('chart'
 // ===== データ読み込み =====
 let bars1m   = [];  // 元の1分足（常に保持）
 let curIdx1m = 200; // 常に bars1m のインデックス
-let curTF    = 1;
+let curTF    = 5;
 let playing  = false;
 let timer    = null;
 
@@ -224,7 +224,7 @@ function renderBars() {
 document.getElementById('tf-select').addEventListener('change', e => {
   const tf = parseInt(e.target.value);
   if (tf === curTF) return;
-  stopPlay(); playing = false; btnPlay.textContent = '▶ 再生';
+  stopPlay(); playing = false; btnPlay.textContent = '▶︎';
   curTF = tf;
   renderBars();
 });
@@ -235,7 +235,7 @@ const speedEl = document.getElementById('speed');
 
 btnPlay.addEventListener('click', () => {
   playing = !playing;
-  btnPlay.textContent = playing ? '⏸' : '▶';
+  btnPlay.textContent = playing ? '⏸︎' : '▶︎';
   if (playing) startPlay(); else stopPlay();
 });
 
@@ -350,12 +350,12 @@ function startTickPlay(bar, onDone) {
 }
 
 function getBarDelay(spd) {
-  return [3000,1500,800,400,200,120,80,50,25,10][spd - 1];
+  return [8000,5000,3000,1500,800,400,200,100,40,10][spd - 1];
 }
 
 function startPlay() {
   function tick() {
-    if (curIdx1m + 1 >= bars1m.length - 1) { stopPlay(); playing = false; btnPlay.textContent = '▶ 再生'; return; }
+    if (curIdx1m + 1 >= bars1m.length - 1) { stopPlay(); playing = false; btnPlay.textContent = '▶︎'; return; }
     curIdx1m++;
     const bar = bars1m[curIdx1m];
     updateTimeLabel(bar);
@@ -461,9 +461,7 @@ function updatePosDisplay(cur) {
 }
 
 // ===== フィボナッチ（Canvasドラッグ方式）=====
-const FIBO_LEVELS  = [0, 1.0, 1.382, 1.618, 1.764, 2.0, 2.618];
-const FIBO_COLORS  = ['#888','#ffffff','#ffeb3b','#4caf50','#ff9800','#ef5350','#e040fb'];
-const FIBO_DASHES  = [[], [], [4,4], [], [4,4], [], [4,4]];
+const FIBO_LEVELS  = [0, 1.0, 1.236, 1.382, 1.618, 1.764, 2.0, 2.618];
 
 // Canvas オーバーレイを chart div の上に重ねる
 const chartDiv = document.getElementById('chart');
@@ -581,21 +579,20 @@ function drawOneFibo(p1, p2, t1, t2, alpha = 1.0, rawX1 = null, rawX2 = null) {
 
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.strokeStyle = FIBO_COLORS[i];
-    ctx.lineWidth   = (lvl === 0 || lvl === 1) ? 1.5 : 1;
-    ctx.setLineDash(FIBO_DASHES[i]);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth   = 1;
+    ctx.setLineDash([]);
     ctx.beginPath();
     ctx.moveTo(xL, y);
     ctx.lineTo(xR, y);
     ctx.stroke();
 
     ctx.globalAlpha = alpha * 0.85;
-    ctx.fillStyle   = FIBO_COLORS[i];
+    ctx.fillStyle   = '#ffffff';
     ctx.font        = '11px monospace';
-    ctx.setLineDash([]);
-    // ラベル: ドラッグ下向き→ラインの下、上向き→ラインの上
     const labelY = isDown ? y - 3 : y + 12;
-    ctx.fillText(`${(lvl * 100).toFixed(1)}%  ${price.toFixed(3)}`, Math.min(xR + 4, fiboCanvas.width - 115), labelY);
+    const labelText = lvl === 0 ? '' : `${lvl}`;
+    ctx.fillText(labelText, Math.min(xR + 4, fiboCanvas.width - 115), labelY);
     ctx.restore();
   });
 }
@@ -998,23 +995,44 @@ document.addEventListener('touchstart', handleFiboExit, true);
     }));
   }
 
+  let lpTimer = null;
+  let lpMoved = false;
+
   chartDiv.addEventListener('touchstart', e => {
     if (fiboActive || e.touches.length !== 1) return;
     e.preventDefault();
     e.stopPropagation();
     proxyActive = true;
+    lpMoved = false;
     const t = e.touches[0];
+    const rect = chartDiv.getBoundingClientRect();
+    const lx = t.clientX - rect.left, ly = t.clientY - rect.top;
+    // 長押し検出（500ms）→ フィボオブジェクトがあれば編集/削除メニュー表示
+    lpTimer = setTimeout(() => {
+      if (!lpMoved && fiboSaved.length > 0) {
+        const idx = hitFiboObject(lx, ly);
+        if (idx >= 0) {
+          proxyActive = false;
+          dispatchMouse('mouseup', t.clientX, t.clientY);
+          showDeleteMenu(t.clientX, t.clientY - 60, idx);
+          return;
+        }
+      }
+    }, 500);
     dispatchMouse('mousedown', t.clientX, t.clientY);
   }, { passive: false, capture: true });
 
   document.addEventListener('touchmove', e => {
     if (!proxyActive) return;
+    lpMoved = true;
+    clearTimeout(lpTimer);
     e.preventDefault();
     const t = e.touches[0];
     dispatchMouse('mousemove', t.clientX, t.clientY);
   }, { passive: false });
 
   document.addEventListener('touchend', e => {
+    clearTimeout(lpTimer);
     if (!proxyActive) return;
     proxyActive = false;
     const t = e.changedTouches[0];
@@ -1023,6 +1041,7 @@ document.addEventListener('touchstart', handleFiboExit, true);
   }, { passive: true });
 
   document.addEventListener('touchcancel', () => {
+    clearTimeout(lpTimer);
     proxyActive = false;
     lastTarget = null;
   }, { passive: true });
