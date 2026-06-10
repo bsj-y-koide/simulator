@@ -1322,7 +1322,7 @@ fiboCanvas.addEventListener('mousedown', e => {
       curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       redrawFibo();
     }
-  } else {
+  } else if (curTool === 'fibo' || curTool === 'tline') {
     const p = pixelToPrice(e.offsetY);
     const t = xToTime(e.offsetX);
     if (p !== null && t !== null) { dragStartPrice = p; dragStartTime = t; dragStartX = e.offsetX; dragging = true; }
