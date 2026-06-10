@@ -94,6 +94,7 @@ input[type=range] { width: 100px; accent-color: #26a69a; }
       <option value="30">30m</option>
       <option value="60">1h</option>
       <option value="240">4h</option>
+      <option value="1440">1d</option>
     </select>
     <select id="lot" title="ロット">
       <option>0.01</option><option>0.05</option><option selected>0.1</option>
@@ -133,6 +134,9 @@ const chart = klinecharts.init('chart', {
     yAxis: { tickText: { color: '#aaa' }, scrollZoomEnabled: true },
   }
 });
+
+// 移動平均線（20, 50, 200）
+chart.createIndicator({ name: 'MA', calcParams: [20, 50, 200] }, false, { id: 'candle_pane' });
 
 // リサイズ対応
 new ResizeObserver(() => chart.resize()).observe(document.getElementById('chart'));
@@ -276,8 +280,8 @@ function saveDrawings() {
         lastDate = dateStr;
       }
     }
-    // 過去3日分（4320本）さかのぼれる候補だけ残す
-    const PAST_BARS = 4320;
+    // 日足200MA用に過去約10ヶ月分さかのぼれるようにする
+    const PAST_BARS = 80000;
     const candidates = dayStarts.filter(i => i >= PAST_BARS && i + 1440 < bars1m.length);
     // URLパラメータで復習モード対応
     const urlParams = new URLSearchParams(location.search);
