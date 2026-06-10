@@ -1305,10 +1305,12 @@ fiboCanvas.addEventListener('mousedown', e => {
     editHandle = hit;
     if (hit.type === 'tline_move') {
       const f = hit.collection[hit.idx];
-      editHandle._startP1 = f.p1; editHandle._startP2 = f.p2;
-      editHandle._startT1 = f.t1; editHandle._startT2 = f.t2;
-      editHandle._startPrice = pixelToPrice(e.offsetY);
-      editHandle._startTime = xToTime(e.offsetX);
+      editHandle._origP1 = f.p1; editHandle._origP2 = f.p2;
+      editHandle._origT1 = f.t1; editHandle._origT2 = f.t2;
+      // 端点のピクセル位置を保存
+      editHandle._px1 = timeToX(f.t1); editHandle._py1 = priceToY(f.p1);
+      editHandle._px2 = timeToX(f.t2); editHandle._py2 = priceToY(f.p2);
+      editHandle._dragStartX = e.offsetX; editHandle._dragStartY = e.offsetY;
     }
     fiboCanvas.style.cursor = 'grab';
   } else if (editMode) {
@@ -1343,13 +1345,19 @@ document.addEventListener('mousemove', e => {
     const p = pixelToPrice(y), t = xToTime(x);
     if (p !== null) {
       if (editHandle.type === 'tline_move') {
-        const dp = p - editHandle._startPrice;
-        const dt = t !== null && editHandle._startTime !== null ? t - editHandle._startTime : 0;
-        const f = editHandle.collection[editHandle.idx];
-        f.p1 = editHandle._startP1 + dp;
-        f.p2 = editHandle._startP2 + dp;
-        f.t1 = editHandle._startT1 + dt;
-        f.t2 = editHandle._startT2 + dt;
+        // ピクセル差分を計算し、元の端点ピクセルにオフセットして変換
+        const dx = x - editHandle._dragStartX;
+        const dy = y - editHandle._dragStartY;
+        const newP1 = pixelToPrice(editHandle._py1 + dy);
+        const newP2 = pixelToPrice(editHandle._py2 + dy);
+        const newT1 = xToTime(editHandle._px1 + dx);
+        const newT2 = xToTime(editHandle._px2 + dx);
+        if (newP1 !== null && newP2 !== null) {
+          const f = editHandle.collection[editHandle.idx];
+          f.p1 = newP1; f.p2 = newP2;
+          if (newT1 !== null) f.t1 = newT1;
+          if (newT2 !== null) f.t2 = newT2;
+        }
       } else if (editHandle.type === 'hline') {
         editHandle.collection[editHandle.idx].price = p;
       } else {
@@ -1564,8 +1572,9 @@ fiboCanvas.addEventListener('touchstart', e => {
       const f = hit.collection[hit.idx];
       editHandle._startP1 = f.p1; editHandle._startP2 = f.p2;
       editHandle._startT1 = f.t1; editHandle._startT2 = f.t2;
-      editHandle._startPrice = pixelToPrice(y);
-      editHandle._startTime = xToTime(x);
+      editHandle._px1 = timeToX(f.t1); editHandle._py1 = priceToY(f.p1);
+      editHandle._px2 = timeToX(f.t2); editHandle._py2 = priceToY(f.p2);
+      editHandle._dragStartX = x; editHandle._dragStartY = y;
     }
   } else if (editMode) {
     disableFiboMode();
@@ -1594,13 +1603,19 @@ fiboCanvas.addEventListener('touchmove', e => {
     const p = pixelToPrice(y), t = xToTime(x);
     if (p !== null) {
       if (editHandle.type === 'tline_move') {
-        const dp = p - editHandle._startPrice;
-        const dt = t !== null && editHandle._startTime !== null ? t - editHandle._startTime : 0;
-        const f = editHandle.collection[editHandle.idx];
-        f.p1 = editHandle._startP1 + dp;
-        f.p2 = editHandle._startP2 + dp;
-        f.t1 = editHandle._startT1 + dt;
-        f.t2 = editHandle._startT2 + dt;
+        // ピクセル差分を計算し、元の端点ピクセルにオフセットして変換
+        const dx = x - editHandle._dragStartX;
+        const dy = y - editHandle._dragStartY;
+        const newP1 = pixelToPrice(editHandle._py1 + dy);
+        const newP2 = pixelToPrice(editHandle._py2 + dy);
+        const newT1 = xToTime(editHandle._px1 + dx);
+        const newT2 = xToTime(editHandle._px2 + dx);
+        if (newP1 !== null && newP2 !== null) {
+          const f = editHandle.collection[editHandle.idx];
+          f.p1 = newP1; f.p2 = newP2;
+          if (newT1 !== null) f.t1 = newT1;
+          if (newT2 !== null) f.t2 = newT2;
+        }
       } else if (editHandle.type === 'hline') {
         editHandle.collection[editHandle.idx].price = p;
       } else {
