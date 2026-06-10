@@ -109,7 +109,18 @@ input[type=range] { width: 100px; accent-color: #26a69a; }
     <button class="tool-btn" data-tool="hline" style="font-size:14px;min-width:32px">ー</button>
     <button class="tool-btn" data-tool="tline" style="font-size:14px;min-width:32px">/</button>
     <button id="btn-tool-clear">✕</button>
+    <button id="btn-settings" style="font-size:14px;min-width:32px;background:#2a2a3a">⚙</button>
     <span id="pos-info"></span>
+  </div>
+</div>
+
+<!-- MA設定パネル -->
+<div id="ma-panel" style="display:none;position:fixed;top:60px;right:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;z-index:200;padding:12px;font-size:13px;min-width:200px">
+  <div style="font-weight:bold;margin-bottom:8px">MA設定</div>
+  <div id="ma-list"></div>
+  <div style="display:flex;gap:6px;margin-top:8px">
+    <button id="ma-add" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">+ 追加</button>
+    <button id="ma-apply" style="flex:1;background:#1565c0;color:#fff;border:none;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">適用</button>
   </div>
 </div>
 
@@ -119,6 +130,52 @@ input[type=range] { width: 100px; accent-color: #26a69a; }
 <div id="positions">ポジションなし</div>
 
 <script>
+// ===== カスタムMA（SMA/EMA混在対応） =====
+let _maTypes = ['SMA','SMA','SMA']; // applyMAから更新される
+
+klinecharts.registerIndicator({
+  name: 'CustomMA',
+  shortName: 'MA',
+  calcParams: [20, 50, 200],
+  figures: [],
+  regenerateFigures: (params) => params.map((_, i) => ({
+    key: `ma${i}`, title: `${(_maTypes[i]||'SMA').substring(0,1)}MA${params[i]}: `, type: 'line'
+  })),
+  calc: (dataList, { calcParams }) => {
+    const result = [];
+    const emaMultipliers = calcParams.map(p => 2 / (p + 1));
+    const emaPrev = new Array(calcParams.length).fill(null);
+
+    for (let i = 0; i < dataList.length; i++) {
+      const item = {};
+      for (let j = 0; j < calcParams.length; j++) {
+        const period = calcParams[j];
+        const type = _maTypes[j] || 'SMA';
+        if (type === 'EMA') {
+          if (emaPrev[j] === null) {
+            if (i >= period - 1) {
+              let sum = 0;
+              for (let k = i - period + 1; k <= i; k++) sum += dataList[k].close;
+              emaPrev[j] = sum / period;
+            }
+          } else {
+            emaPrev[j] = (dataList[i].close - emaPrev[j]) * emaMultipliers[j] + emaPrev[j];
+          }
+          item[`ma${j}`] = emaPrev[j];
+        } else {
+          if (i >= period - 1) {
+            let sum = 0;
+            for (let k = i - period + 1; k <= i; k++) sum += dataList[k].close;
+            item[`ma${j}`] = sum / period;
+          }
+        }
+      }
+      result.push(item);
+    }
+    return result;
+  }
+});
+
 // ===== チャート初期化 =====
 const chart = klinecharts.init('chart', {
   styles: {
@@ -134,9 +191,6 @@ const chart = klinecharts.init('chart', {
     yAxis: { tickText: { color: '#aaa' }, scrollZoomEnabled: true },
   }
 });
-
-// 移動平均線（20, 50, 200）
-chart.createIndicator({ name: 'MA', calcParams: [20, 50, 200] }, false, { id: 'candle_pane' });
 
 // リサイズ対応
 new ResizeObserver(() => chart.resize()).observe(document.getElementById('chart'));
@@ -992,6 +1046,17 @@ function drawAllHandles() {
   }
   drawPairHandles(fiboSaved, 'fibo', '#f57f17');
   drawPairHandles(tlineSaved, 'tline', '#42a5f5');
+  // トレンドライン中央移動ハンドル
+  tlineSaved.forEach((f, i) => {
+    if (!shouldDraw('tline', i)) return;
+    const x1 = timeToX(f.t1), x2 = timeToX(f.t2);
+    const y1 = priceToY(f.p1), y2 = priceToY(f.p2);
+    if (x1 === null || x2 === null || y1 === null || y2 === null) return;
+    const mx = (x1+x2)/2, my = (y1+y2)/2;
+    ctx.beginPath(); ctx.arc(mx, my, HANDLE_R, 0, Math.PI*2);
+    ctx.fillStyle = '#42a5f5'; ctx.globalAlpha = 0.5; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+  });
   // 水平線ハンドル（中央）
   hlineSaved.forEach((h, i) => {
     if (!shouldDraw('hline', i)) return;
@@ -1048,6 +1113,15 @@ function hitHandle(mx, my) {
       if (y !== null && Math.sqrt((mx-cx)**2 + (my-y)**2) < HANDLE_R + 6)
         return { collection: col, idx: editTarget.idx, point: 'price', timeKey: null, type: 'hline' };
     } else {
+      // 中央ハンドル（全体移動）
+      if (editTarget.type === 'tline') {
+        const x1 = timeToX(f.t1), x2 = timeToX(f.t2), y1 = priceToY(f.p1), y2 = priceToY(f.p2);
+        if (x1 !== null && x2 !== null && y1 !== null && y2 !== null) {
+          const cmx = (x1+x2)/2, cmy = (y1+y2)/2;
+          if (Math.sqrt((mx-cmx)**2 + (my-cmy)**2) < HANDLE_R + 6)
+            return { collection: col, idx: editTarget.idx, point: 'move', timeKey: null, type: 'tline_move' };
+        }
+      }
       for (const [pk, tk] of [['p1','t1'], ['p2','t2']]) {
         const x = timeToX(f[tk]), y = priceToY(f[pk]);
         if (x === null || y === null) continue;
@@ -1133,8 +1207,15 @@ fiboCanvas.addEventListener('mousedown', e => {
   const hit = hitHandle(e.offsetX, e.offsetY);
   if (hit) {
     editHandle = hit;
+    if (hit.type === 'tline_move') {
+      // 全体移動の開始位置を記録
+      const f = hit.collection[hit.idx];
+      editHandle._startP1 = f.p1; editHandle._startP2 = f.p2;
+      editHandle._startT1 = f.t1; editHandle._startT2 = f.t2;
+      editHandle._startMx = e.offsetX; editHandle._startMy = e.offsetY;
+    }
     fiboCanvas.style.cursor = 'grab';
-  } else if (editMode && !curTool) {
+  } else if (editMode) {
     // 編集モードでハンドル外クリック → 終了
     disableFiboMode();
   } else if (curTool === 'hline') {
@@ -1165,7 +1246,17 @@ document.addEventListener('mousemove', e => {
   if (editHandle) {
     const p = pixelToPrice(y), t = xToTime(x);
     if (p !== null) {
-      if (editHandle.type === 'hline') {
+      if (editHandle.type === 'tline_move') {
+        const dp = p - pixelToPrice(editHandle._startMy);
+        const dt = (t || 0) - (xToTime(editHandle._startMx) || 0);
+        if (dp !== null) {
+          const f = editHandle.collection[editHandle.idx];
+          f.p1 = editHandle._startP1 + dp;
+          f.p2 = editHandle._startP2 + dp;
+          f.t1 = editHandle._startT1 + dt;
+          f.t2 = editHandle._startT2 + dt;
+        }
+      } else if (editHandle.type === 'hline') {
         editHandle.collection[editHandle.idx].price = p;
       } else {
         editHandle.collection[editHandle.idx][editHandle.point] = p;
@@ -1278,6 +1369,7 @@ const menuItemHover = 'this.style.background="#3d6a99"';
 const menuItemOut   = 'this.style.background="none"';
 deleteMenu.innerHTML = `
   <button id="dmenu-edit" style="${menuItemStyle}" onmouseover='${menuItemHover}' onmouseout='${menuItemOut}'>編集</button>
+  <button id="dmenu-dup" style="${menuItemStyle}" onmouseover='${menuItemHover}' onmouseout='${menuItemOut}'>複製</button>
   <div style="height:1px;background:#4a4a4a;margin:2px 0"></div>
   <button id="dmenu-del" style="${menuItemStyle};color:#ff6b6b" onmouseover='${menuItemHover}' onmouseout='${menuItemOut}'>削除</button>
 `;
@@ -1302,6 +1394,27 @@ document.getElementById('dmenu-edit').addEventListener('click', () => {
     editMode = true;
     editTarget = { type: deleteTargetType, idx: deleteTargetIdx };
     enableFiboMode(deleteTargetType || 'fibo');
+  }
+  hideDeleteMenu();
+});
+document.getElementById('dmenu-dup').addEventListener('click', () => {
+  if (deleteTargetIdx >= 0) {
+    const col = deleteTargetType === 'hline' ? hlineSaved : deleteTargetType === 'tline' ? tlineSaved : fiboSaved;
+    const orig = col[deleteTargetIdx];
+    if (orig) {
+      // 少しずらして複製（トレンドラインは同じ傾きで価格を少しずらす）
+      const offset = deleteTargetType === 'hline' ? 5 : 3;
+      const dup = JSON.parse(JSON.stringify(orig));
+      if (deleteTargetType === 'hline') {
+        dup.price += offset;
+      } else {
+        dup.p1 += offset; dup.p2 += offset;
+      }
+      col.push(dup);
+      editMode = true; editTarget = { type: deleteTargetType, idx: col.length - 1 };
+      enableFiboMode(deleteTargetType);
+      markDrawingsDirty(); redrawFibo();
+    }
   }
   hideDeleteMenu();
 });
@@ -1539,6 +1652,96 @@ document.addEventListener('touchstart', handleFiboExit, true);
     lastTarget = null;
   }, { passive: true });
 })();
+
+// ===== MA =====
+const MA_COLORS = ['#ff9800','#ab47bc','#42a5f5','#ef5350','#26a69a','#ffeb3b','#ec407a','#66bb6a','#78909c','#fff'];
+const MA_DEFAULTS = [
+  { period: 20, enabled: true, color: MA_COLORS[0], type: 'SMA' },
+  { period: 50, enabled: true, color: MA_COLORS[1], type: 'SMA' },
+  { period: 200, enabled: true, color: MA_COLORS[2], type: 'SMA' }
+];
+// 古いキーを掃除
+localStorage.removeItem('maParams');
+localStorage.removeItem('maSetting');
+localStorage.removeItem('maConfigs');
+
+let maLines;
+try {
+  const saved = JSON.parse(localStorage.getItem('maLines'));
+  maLines = (Array.isArray(saved) && saved.length > 0) ? saved.map((m, i) => ({ ...m, type: m.type || 'SMA', color: MA_COLORS[i % MA_COLORS.length] })) : MA_DEFAULTS;
+} catch(e) { maLines = MA_DEFAULTS; }
+
+let _maInitDone = false;
+function applyMA() {
+  const active = maLines.filter(m => m.enabled);
+  const params = active.length > 0 ? active.map(m => m.period) : [20, 50, 200];
+  _maTypes = active.length > 0 ? active.map(m => m.type || 'SMA') : ['SMA','SMA','SMA'];
+  if (!_maInitDone) {
+    chart.createIndicator('CustomMA', false, { id: 'candle_pane' });
+    _maInitDone = true;
+  }
+  chart.overrideIndicator({ name: 'CustomMA', calcParams: params }, 'candle_pane');
+  // 色をグローバルスタイルで適用（安全）
+  const colors = maLines.map(m => ({ color: m.enabled ? m.color : 'transparent', size: m.enabled ? 1 : 0 }));
+  chart.setStyles({ indicator: { lines: colors } });
+}
+
+function renderMAList() {
+  document.getElementById('ma-list').innerHTML = maLines.map((m, i) => {
+    const c = m.color;
+    return `<div style="display:flex;align-items:center;gap:5px;margin-bottom:4px;padding:4px 0">
+      <input type="checkbox" ${m.enabled?'checked':''} data-mai="${i}" class="ma-chk" style="accent-color:${c}">
+      <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${c};flex-shrink:0"></span>
+      <select data-mai="${i}" class="ma-type" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:1px 2px;font-size:11px">
+        <option value="SMA" ${(m.type||'SMA')==='SMA'?'selected':''}>SMA</option>
+        <option value="EMA" ${m.type==='EMA'?'selected':''}>EMA</option>
+      </select>
+      <input type="number" min="1" max="999" value="${m.period}" data-mai="${i}" class="ma-per" style="width:50px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
+      <button onclick="removeMALine(${i})" style="margin-left:auto;background:none;border:none;color:#484f58;font-size:14px;cursor:pointer;padding:0 4px;min-height:20px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function cycleMAColor(i) {
+  const cur = MA_COLORS.indexOf(maLines[i].color);
+  maLines[i].color = MA_COLORS[(cur + 1) % MA_COLORS.length];
+  renderMAList();
+}
+function removeMALine(i) { maLines.splice(i, 1); saveAndApplyMA(); renderMAList(); }
+
+function saveAndApplyMA() {
+  localStorage.setItem('maLines', JSON.stringify(maLines));
+  applyMA();
+}
+
+renderMAList();
+applyMA();
+
+document.getElementById('btn-settings').addEventListener('click', () => {
+  const panel = document.getElementById('ma-panel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') renderMAList();
+});
+document.getElementById('ma-add').addEventListener('click', () => {
+  const used = maLines.map(m => m.color);
+  const next = MA_COLORS.find(c => !used.includes(c)) || MA_COLORS[maLines.length % MA_COLORS.length];
+  maLines.push({ period: 20, enabled: true, color: next, type: 'SMA' });
+  renderMAList();
+});
+document.getElementById('ma-apply').addEventListener('click', () => {
+  // UIから値を読み取り
+  document.querySelectorAll('.ma-per').forEach(el => {
+    maLines[parseInt(el.dataset.mai)].period = parseInt(el.value) || 20;
+  });
+  document.querySelectorAll('.ma-chk').forEach(el => {
+    maLines[parseInt(el.dataset.mai)].enabled = el.checked;
+  });
+  document.querySelectorAll('.ma-type').forEach(el => {
+    maLines[parseInt(el.dataset.mai)].type = el.value;
+  });
+  saveAndApplyMA();
+  document.getElementById('ma-panel').style.display = 'none';
+});
 
 // ===== キーボード =====
 document.addEventListener('keydown', e => {
