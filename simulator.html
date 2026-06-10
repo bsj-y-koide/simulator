@@ -280,8 +280,8 @@ function saveDrawings() {
         lastDate = dateStr;
       }
     }
-    // 日足200MA用に過去約10ヶ月分さかのぼれるようにする
-    const PAST_BARS = 80000;
+    // 日足200MA用に過去約200営業日分さかのぼれるようにする
+    const PAST_BARS = 220000;
     const candidates = dayStarts.filter(i => i >= PAST_BARS && i + 1440 < bars1m.length);
     // URLパラメータで復習モード対応
     const urlParams = new URLSearchParams(location.search);
