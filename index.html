@@ -148,7 +148,7 @@ h2 { font-size: 15px; color: #8b949e; margin: 20px 0 8px; border-bottom: 1px sol
 <script>
 // ===== IndexedDB =====
 const DB_NAME = 'TradingSimDB';
-const DB_VER  = 2;
+const DB_VER  = 3;
 let db = null;
 
 function openDB() {
@@ -164,6 +164,9 @@ function openDB() {
       if (!d.objectStoreNames.contains('sessions')) {
         const ss = d.createObjectStore('sessions', { keyPath: 'id' });
         ss.createIndex('startDate', 'startDate');
+      }
+      if (!d.objectStoreNames.contains('dataCache')) {
+        d.createObjectStore('dataCache', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => { db = e.target.result; resolve(db); };

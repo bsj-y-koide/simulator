@@ -182,7 +182,7 @@ function getPartialBar(idx) {
 
 // ===== IndexedDB =====
 const DB_NAME = 'TradingSimDB';
-const DB_VER  = 2;
+const DB_VER  = 3;
 let db = null;
 function openDB() {
   return new Promise((resolve) => {
@@ -197,6 +197,9 @@ function openDB() {
       if (!d.objectStoreNames.contains('sessions')) {
         const ss = d.createObjectStore('sessions', { keyPath: 'id' });
         ss.createIndex('startDate', 'startDate');
+      }
+      if (!d.objectStoreNames.contains('dataCache')) {
+        d.createObjectStore('dataCache', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => { db = e.target.result; resolve(db); };
@@ -242,7 +245,25 @@ function saveDrawings() {
 
 (async () => {
   await openDB();
-  const data = await fetch('ohlc_1m.json.gz').then(r => new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).json());
+  // キャッシュから読み込み、なければfetch→パース→キャッシュ
+  let data = null;
+  if (db && db.objectStoreNames.contains('dataCache')) {
+    data = await new Promise(r => {
+      const req = db.transaction('dataCache','readonly').objectStore('dataCache').get('bars1m');
+      req.onsuccess = () => r(req.result?.data || null);
+      req.onerror = () => r(null);
+    });
+  }
+  if (!data) {
+    const raw = await fetch('ohlc_1m.json.gz').then(r => new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).json());
+    data = [];
+    for (let i = 0; i < raw.length; i += 5) {
+      data.push({ t: raw[i], o: raw[i+1], h: raw[i+2], l: raw[i+3], c: raw[i+4] });
+    }
+    if (db && db.objectStoreNames.contains('dataCache')) {
+      try { db.transaction('dataCache','readwrite').objectStore('dataCache').put({ id: 'bars1m', data }); } catch(e) {}
+    }
+  }
   bars1m = data;
     // 各取引日の開始位置を収集（日付が変わった最初のバー）
     const dayStarts = [];
