@@ -114,13 +114,20 @@ input[type=range] { width: 100px; accent-color: #26a69a; }
   </div>
 </div>
 
-<!-- MA設定パネル -->
-<div id="ma-panel" style="display:none;position:fixed;top:60px;right:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;z-index:200;padding:12px;font-size:13px;min-width:200px">
+<!-- 設定パネル -->
+<div id="ma-panel" style="display:none;position:fixed;top:60px;right:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;z-index:200;padding:12px;font-size:13px;min-width:220px;max-height:80vh;overflow-y:auto">
   <div style="font-weight:bold;margin-bottom:8px">MA設定</div>
   <div id="ma-list"></div>
   <div style="display:flex;gap:6px;margin-top:8px">
     <button id="ma-add" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">+ 追加</button>
     <button id="ma-apply" style="flex:1;background:#1565c0;color:#fff;border:none;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">適用</button>
+  </div>
+  <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
+    <div style="font-weight:bold;margin-bottom:8px">SMCインジケーター</div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="fvg-toggle" style="accent-color:#26a69a">
+      <span>FVG（Fair Value Gap）</span>
+    </label>
   </div>
 </div>
 
@@ -835,6 +842,93 @@ const HANDLE_R = 6; // ハンドル半径(px)
 
 
 // 決済済みトレードのエントリー・決済マーカーを描画
+// ===== FVG（Fair Value Gap）=====
+let fvgEnabled = JSON.parse(localStorage.getItem('fvgEnabled') || 'false');
+let fvgCache = []; // { top, bottom, startTs, bullish }
+let fvgCacheIdx = -1;
+
+function detectFVGs() {
+  if (fvgCacheIdx === curIdx1m) return;
+  fvgCacheIdx = curIdx1m;
+  fvgCache = [];
+  if (!fvgEnabled) return;
+
+  const tfBars = aggregateBars(bars1m.slice(0, curIdx1m + 1), curTF);
+
+  // 最小ギャップサイズ: 直近50本のATR的な平均レンジの30%
+  const recentBars = tfBars.slice(-50);
+  const avgRange = recentBars.reduce((s, b) => s + (b.h - b.l), 0) / recentBars.length;
+  const minGap = avgRange * 0.3;
+
+  const lastPrice = tfBars[tfBars.length - 1]?.c || 0;
+
+  for (let i = 2; i < tfBars.length; i++) {
+    const prev = tfBars[i - 2];
+    const curr = tfBars[i - 1];
+    const next = tfBars[i];
+
+    let top, bottom, bullish;
+    // Bullish FVG
+    if (prev.h < next.l) {
+      top = next.l; bottom = prev.h; bullish = true;
+    }
+    // Bearish FVG
+    else if (prev.l > next.h) {
+      top = prev.l; bottom = next.h; bullish = false;
+    }
+    else continue;
+
+    const gap = top - bottom;
+    // フィルタ: 小さいギャップを除外
+    if (gap < minGap) continue;
+
+    // 埋められたFVGを除外（その後の価格がゾーンを完全に通過）
+    let mitigated = false;
+    for (let j = i + 1; j < tfBars.length; j++) {
+      if (bullish && tfBars[j].l <= bottom) { mitigated = true; break; }
+      if (!bullish && tfBars[j].h >= top) { mitigated = true; break; }
+    }
+    if (mitigated) continue;
+
+    fvgCache.push({
+      top, bottom,
+      startTs: curr.t * 1000,
+      endTs: next.t * 1000,
+      bullish
+    });
+  }
+  // 直近50個に制限
+  if (fvgCache.length > 50) fvgCache = fvgCache.slice(-50);
+}
+
+function drawFVGs() {
+  if (!fvgEnabled || fvgCache.length === 0) return;
+  const w = chartDiv.clientWidth;
+  fvgCache.forEach(fvg => {
+    const x1 = timeToX(fvg.startTs);
+    const yTop = priceToY(fvg.top);
+    const yBot = priceToY(fvg.bottom);
+    if (x1 === null || yTop === null || yBot === null) return;
+    if (yTop > chartDiv.clientHeight || yBot < 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = fvg.bullish ? '#26a69a' : '#ef5350';
+    ctx.fillRect(x1, yTop, w - x1, yBot - yTop);
+    // 上下の境界線のみ
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = fvg.bullish ? '#26a69a' : '#ef5350';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x1, yTop); ctx.lineTo(w, yTop);
+    ctx.moveTo(x1, yBot); ctx.lineTo(w, yBot);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+}
+
 // Bid/Ask価格ラベル（Y軸右側のみ）
 function drawBidAskLines() {
   const mid = livePrice || bars1m[curIdx1m]?.c || 0;
@@ -1080,6 +1174,8 @@ function markDrawingsDirty() {
 
 function redrawFibo() {
   ctx.clearRect(0, 0, fiboCanvas.width, fiboCanvas.height);
+  detectFVGs();
+  drawFVGs();
   drawBidAskLines();
   drawTradeMarkers();
   drawPositionLines();
@@ -1716,6 +1812,15 @@ function saveAndApplyMA() {
 
 renderMAList();
 applyMA();
+
+// FVGトグル
+document.getElementById('fvg-toggle').checked = fvgEnabled;
+document.getElementById('fvg-toggle').addEventListener('change', e => {
+  fvgEnabled = e.target.checked;
+  localStorage.setItem('fvgEnabled', JSON.stringify(fvgEnabled));
+  fvgCacheIdx = -1; // キャッシュ無効化
+  redrawFibo();
+});
 
 document.getElementById('btn-settings').addEventListener('click', () => {
   const panel = document.getElementById('ma-panel');
