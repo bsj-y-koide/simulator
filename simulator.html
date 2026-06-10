@@ -1562,6 +1562,8 @@ fiboCanvas.addEventListener('touchstart', e => {
   const hit = hitHandle(x, y);
   if (hit) {
     editHandle = hit;
+  } else if (editMode) {
+    disableFiboMode();
   } else if (curTool === 'hline') {
     const p = pixelToPrice(y);
     if (p !== null) {
@@ -1570,7 +1572,7 @@ fiboCanvas.addEventListener('touchstart', e => {
       curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       redrawFibo();
     }
-  } else {
+  } else if (curTool === 'fibo' || curTool === 'tline') {
     const p = pixelToPrice(y), t = xToTime(x);
     if (p !== null && t !== null) { dragStartPrice = p; dragStartTime = t; touchDragging = true; }
   }
