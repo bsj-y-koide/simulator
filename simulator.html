@@ -1562,6 +1562,12 @@ fiboCanvas.addEventListener('touchstart', e => {
   const hit = hitHandle(x, y);
   if (hit) {
     editHandle = hit;
+    if (hit.type === 'tline_move') {
+      const f = hit.collection[hit.idx];
+      editHandle._startP1 = f.p1; editHandle._startP2 = f.p2;
+      editHandle._startT1 = f.t1; editHandle._startT2 = f.t2;
+      editHandle._startMx = x; editHandle._startMy = y;
+    }
   } else if (editMode) {
     disableFiboMode();
   } else if (curTool === 'hline') {
@@ -1588,7 +1594,17 @@ fiboCanvas.addEventListener('touchmove', e => {
   if (editHandle) {
     const p = pixelToPrice(y), t = xToTime(x);
     if (p !== null) {
-      if (editHandle.type === 'hline') {
+      if (editHandle.type === 'tline_move') {
+        const dp = p - pixelToPrice(editHandle._startMy);
+        const dt = (t || 0) - (xToTime(editHandle._startMx) || 0);
+        if (dp !== null) {
+          const f = editHandle.collection[editHandle.idx];
+          f.p1 = editHandle._startP1 + dp;
+          f.p2 = editHandle._startP2 + dp;
+          f.t1 = editHandle._startT1 + dt;
+          f.t2 = editHandle._startT2 + dt;
+        }
+      } else if (editHandle.type === 'hline') {
         editHandle.collection[editHandle.idx].price = p;
       } else {
         editHandle.collection[editHandle.idx][editHandle.point] = p;
