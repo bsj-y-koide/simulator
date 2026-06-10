@@ -139,7 +139,7 @@ klinecharts.registerIndicator({
   calcParams: [20, 50, 200],
   figures: [],
   regenerateFigures: (params) => params.map((_, i) => ({
-    key: `ma${i}`, title: `${(_maTypes[i]||'SMA').substring(0,1)}MA${params[i]}: `, type: 'line'
+    key: `ma${i}`, title: `${(_maTypes[i]||'SMA')==='EMA'?'EMA':'MA'}${params[i]}: `, type: 'line'
   })),
   calc: (dataList, { calcParams }) => {
     const result = [];
@@ -1016,7 +1016,7 @@ function drawOneTLine(p1, p2, t1, t2, alpha = 1.0, rx1 = null, rx2 = null) {
   if (x1 === null || x2 === null || y1 === null || y2 === null) return;
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.strokeStyle = '#42a5f5';
+  ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([]);
   ctx.beginPath();
@@ -1045,7 +1045,7 @@ function drawAllHandles() {
     });
   }
   drawPairHandles(fiboSaved, 'fibo', '#f57f17');
-  drawPairHandles(tlineSaved, 'tline', '#42a5f5');
+  drawPairHandles(tlineSaved, 'tline', '#ffffff');
   // トレンドライン中央移動ハンドル
   tlineSaved.forEach((f, i) => {
     if (!shouldDraw('tline', i)) return;
@@ -1054,7 +1054,7 @@ function drawAllHandles() {
     if (x1 === null || x2 === null || y1 === null || y2 === null) return;
     const mx = (x1+x2)/2, my = (y1+y2)/2;
     ctx.beginPath(); ctx.arc(mx, my, HANDLE_R, 0, Math.PI*2);
-    ctx.fillStyle = '#42a5f5'; ctx.globalAlpha = 0.5; ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.globalAlpha = 0.5; ctx.fill();
     ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
   });
   // 水平線ハンドル（中央）
@@ -1693,7 +1693,7 @@ function renderMAList() {
       <input type="checkbox" ${m.enabled?'checked':''} data-mai="${i}" class="ma-chk" style="accent-color:${c}">
       <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${c};flex-shrink:0"></span>
       <select data-mai="${i}" class="ma-type" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:1px 2px;font-size:11px">
-        <option value="SMA" ${(m.type||'SMA')==='SMA'?'selected':''}>SMA</option>
+        <option value="SMA" ${(m.type||'SMA')==='SMA'?'selected':''}>MA</option>
         <option value="EMA" ${m.type==='EMA'?'selected':''}>EMA</option>
       </select>
       <input type="number" min="1" max="999" value="${m.period}" data-mai="${i}" class="ma-per" style="width:50px;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
