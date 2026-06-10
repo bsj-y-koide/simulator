@@ -1344,12 +1344,9 @@ document.addEventListener('mousemove', e => {
     if (p !== null) {
       if (editHandle.type === 'tline_move') {
         const dp = p - editHandle._startPrice;
-        const dt = (t || 0) - (editHandle._startTime || 0);
         const f = editHandle.collection[editHandle.idx];
         f.p1 = editHandle._startP1 + dp;
         f.p2 = editHandle._startP2 + dp;
-        f.t1 = editHandle._startT1 + dt;
-        f.t2 = editHandle._startT2 + dt;
       } else if (editHandle.type === 'hline') {
         editHandle.collection[editHandle.idx].price = p;
       } else {
@@ -1595,12 +1592,9 @@ fiboCanvas.addEventListener('touchmove', e => {
     if (p !== null) {
       if (editHandle.type === 'tline_move') {
         const dp = p - editHandle._startPrice;
-        const dt = (t || 0) - (editHandle._startTime || 0);
         const f = editHandle.collection[editHandle.idx];
         f.p1 = editHandle._startP1 + dp;
         f.p2 = editHandle._startP2 + dp;
-        f.t1 = editHandle._startT1 + dt;
-        f.t2 = editHandle._startT2 + dt;
       } else if (editHandle.type === 'hline') {
         editHandle.collection[editHandle.idx].price = p;
       } else {
