@@ -48,10 +48,11 @@ klinecharts.registerIndicator({
 var fvgEnabled = JSON.parse(localStorage.getItem('fvgEnabled') || 'false');
 var fvgCache = []; // { top, bottom, startTs, bullish }
 var fvgCacheIdx = -1;
+var fvgCacheTF = -1;
 
 function detectFVGs() {
-  if (fvgCacheIdx === curIdx1m) return;
-  fvgCacheIdx = curIdx1m;
+  if (fvgCacheIdx === curIdx1m && fvgCacheTF === curTF) return;
+  fvgCacheIdx = curIdx1m; fvgCacheTF = curTF;
   fvgCache = [];
   if (!fvgEnabled) return;
 
@@ -135,6 +136,7 @@ function drawFVGs() {
 var bosEnabled = JSON.parse(localStorage.getItem('bosEnabled') || 'false');
 var bosCache = []; // { type:'BOS'|'CHoCH', bullish, price, ts, swingPrice }
 var bosCacheIdx = -1;
+var bosCacheTF = -1;
 
 // スイングポイント検出（N本lookback）
 function findSwings(bars, lookback) {
@@ -152,8 +154,8 @@ function findSwings(bars, lookback) {
 }
 
 function detectBOS() {
-  if (bosCacheIdx === curIdx1m) return;
-  bosCacheIdx = curIdx1m;
+  if (bosCacheIdx === curIdx1m && bosCacheTF === curTF) return;
+  bosCacheIdx = curIdx1m; bosCacheTF = curTF;
   bosCache = [];
   if (!bosEnabled) return;
 
@@ -161,7 +163,7 @@ function detectBOS() {
   if (tfBars.length < 20) return;
 
   // 時間足に応じたlookback（約3時間分）
-  const lookback = Math.max(3, Math.round(180 / curTF));
+  const lookback = 5;
   const swings = findSwings(tfBars, lookback);
   if (swings.length < 3) return;
 
@@ -256,10 +258,11 @@ function drawBOS() {
 var obEnabled = JSON.parse(localStorage.getItem('obEnabled') || 'false');
 var obCache = []; // { top, bottom, ts, bullish, mitigated }
 var obCacheIdx = -1;
+var obCacheTF = -1;
 
 function detectOB() {
-  if (obCacheIdx === curIdx1m) return;
-  obCacheIdx = curIdx1m;
+  if (obCacheIdx === curIdx1m && obCacheTF === curTF) return;
+  obCacheIdx = curIdx1m; obCacheTF = curTF;
   obCache = [];
   if (!obEnabled) return;
 
@@ -346,6 +349,7 @@ var rangeEnabled = JSON.parse(localStorage.getItem('rangeEnabled') || 'false');
 var rangeSetting = JSON.parse(localStorage.getItem('rangeSetting') || '{"from":"07:00","to":"09:00","end":"05:00"}');
 var rangeCache = []; // { high, low, drawStartTs, drawEndTs }
 var rangeCacheIdx = -1;
+var rangeCacheTF = -1;
 
 function jstHourMin(ts) {
   const d = new Date(ts * 1000);
@@ -354,8 +358,8 @@ function jstHourMin(ts) {
 function parseHM(s) { const [h,m] = s.split(':').map(Number); return h * 60 + m; }
 
 function detectRanges() {
-  if (rangeCacheIdx === curIdx1m) return;
-  rangeCacheIdx = curIdx1m;
+  if (rangeCacheIdx === curIdx1m && rangeCacheTF === curTF) return;
+  rangeCacheIdx = curIdx1m; rangeCacheTF = curTF;
   rangeCache = [];
   if (!rangeEnabled) return;
 
