@@ -401,8 +401,10 @@ document.querySelectorAll('.tab').forEach(tab => {
 document.getElementById('btn-reset').addEventListener('click', () => {
   if (!confirm('全てのセッション・トレードデータを削除しますか？\nこの操作は取り消せません。')) return;
   if (db) db.close();
-  indexedDB.deleteDatabase('TradingSimDB');
-  location.reload();
+  const req = indexedDB.deleteDatabase('TradingSimDB');
+  req.onsuccess = () => location.reload();
+  req.onerror = () => location.reload();
+  req.onblocked = () => location.reload();
 });
 
 loadData();
