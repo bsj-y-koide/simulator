@@ -173,16 +173,11 @@ function enableYAxisManualMode() {
   if (_yAxisManualDone) return;
   _yAxisManualDone = true;
   setTimeout(() => {
-    const el = document.getElementById('chart');
-    const rect = el.getBoundingClientRect();
-    const x = rect.right - 25;
-    const y = rect.top + rect.height / 2;
-    const target = el.querySelectorAll('canvas')[0];
-    if (!target) return;
-    target.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, bubbles: true }));
-    target.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y + 1, bubbles: true }));
-    target.dispatchEvent(new MouseEvent('mouseup', { clientX: x, clientY: y + 1, bubbles: true }));
-  }, 500);
+    try {
+      const pane = chart.getDrawPaneById('candle_pane');
+      if (pane && pane._axis) pane._axis._autoCalcTickFlag = false;
+    } catch(e) {}
+  }, 300);
 }
 
 // ===== 時間足切り替え =====
