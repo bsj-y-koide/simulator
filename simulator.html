@@ -48,26 +48,33 @@
 
 <!-- 設定パネル -->
 <div id="ma-panel" style="display:none;position:fixed;top:60px;right:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;z-index:200;padding:12px;font-size:13px;min-width:220px;max-height:80vh;overflow-y:auto">
-  <div style="font-weight:bold;margin-bottom:8px">MA設定</div>
-  <div id="ma-list"></div>
-  <div style="display:flex;gap:6px;margin-top:8px">
+  <div style="display:flex;gap:6px;margin-bottom:10px;position:sticky;top:-12px;background:#161b22;padding:4px 0 8px;z-index:1">
     <button id="ma-add" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">+ 追加</button>
     <button id="ma-apply" style="flex:1;background:#1565c0;color:#fff;border:none;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">適用</button>
   </div>
+  <div style="font-weight:bold;margin-bottom:8px">MA設定</div>
+  <div id="ma-list"></div>
   <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
-    <div style="font-weight:bold;margin-bottom:8px">SMCインジケーター</div>
+    <div style="font-weight:bold;margin-bottom:8px">自動TP/SL</div>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
-      <input type="checkbox" id="fvg-toggle" style="accent-color:#26a69a">
-      <span>FVG（Fair Value Gap）</span>
+      <input type="checkbox" id="auto-tpsl-toggle" style="accent-color:#76ff03">
+      <span>エントリー時に自動設定</span>
     </label>
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
-      <input type="checkbox" id="bos-toggle" style="accent-color:#ef5350">
-      <span>BOS / CHoCH</span>
-    </label>
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
-      <input type="checkbox" id="ob-toggle" style="accent-color:#42a5f5">
-      <span>Order Block</span>
-    </label>
+    <div id="auto-tpsl-settings" style="display:none;padding-left:24px;font-size:11px;color:#8b949e">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="color:#76ff03;min-width:20px">TP</span>
+        <input id="auto-tp-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
+        <span>pips</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:#ff5252;min-width:20px">SL</span>
+        <input id="auto-sl-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
+        <span>pips</span>
+      </div>
+    </div>
+  </div>
+  <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
+    <div style="font-weight:bold;margin-bottom:8px">セッション</div>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
       <input type="checkbox" id="range-toggle" style="accent-color:#ff9800">
       <span>時間帯レンジ</span>
@@ -87,23 +94,19 @@
     </div>
   </div>
   <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
-    <div style="font-weight:bold;margin-bottom:8px">自動TP/SL</div>
+    <div style="font-weight:bold;margin-bottom:8px">SMCインジケーター</div>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
-      <input type="checkbox" id="auto-tpsl-toggle" style="accent-color:#76ff03">
-      <span>エントリー時に自動設定</span>
+      <input type="checkbox" id="fvg-toggle" style="accent-color:#26a69a">
+      <span>FVG（Fair Value Gap）</span>
     </label>
-    <div id="auto-tpsl-settings" style="display:none;padding-left:24px;font-size:11px;color:#8b949e">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
-        <span style="color:#76ff03;min-width:20px">TP</span>
-        <input id="auto-tp-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
-        <span>pips</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <span style="color:#ff5252;min-width:20px">SL</span>
-        <input id="auto-sl-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
-        <span>pips</span>
-      </div>
-    </div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="bos-toggle" style="accent-color:#ef5350">
+      <span>BOS / CHoCH</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="ob-toggle" style="accent-color:#42a5f5">
+      <span>Order Block</span>
+    </label>
   </div>
 </div>
 
