@@ -229,6 +229,7 @@ function redrawFibo() {
   drawOB();
   detectRanges();
   drawRanges();
+  if (typeof checkTPSLAndLimits === 'function') checkTPSLAndLimits(livePrice || bars1m[curIdx1m]?.c || 0);
   drawBidAskLines();
   drawTradeMarkers();
   drawPositionLines();
@@ -351,6 +352,107 @@ function pixelToPrice(y) {
 var dragStartTime = null;
 var dragStartX    = null;
 
+// TP/SL操作（chartDiv上のクリック）
+document.addEventListener('mousedown', e => {
+  if (fiboActive || tpslDrag) return;
+  const rect = chartDiv.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  if (mx < 0 || my < 0 || mx > rect.width || my > rect.height) return;
+  const hit = hitTPSLHandle(mx, my);
+  if (hit && hit.kind !== 'select') {
+    // limitは選択中のみドラッグ可能
+    if (hit.kind === 'limit' && selectedLimitId !== hit.obj.id) return;
+    e.preventDefault(); e.stopPropagation();
+    tpslDrag = hit;
+    chart.setScrollEnabled(false);
+    chart.setZoomEnabled(false);
+  }
+}, true);
+
+// チャート上のクリックでポジション/指値ライン選択
+chartDiv.addEventListener('click', e => {
+  if (fiboActive || tpslDrag) return;
+  const rect = chartDiv.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+  // TP/SL/指値ハンドルのヒットチェック
+  const hit = hitTPSLHandle(mx, my);
+  if (hit) {
+    if (hit.kind === 'select') {
+      selectedPosId = selectedPosId === hit.posId ? null : hit.posId;
+    }
+    redrawFibo();
+    return;
+  }
+
+  // ポジションライン
+  for (const p of positions) {
+    const y = priceToY(p.price);
+    if (y !== null && Math.abs(my - y) < 15) {
+      selectedPosId = selectedPosId === p.id ? null : p.id;
+      redrawFibo();
+      return;
+    }
+  }
+  // 指値ライン（クリックで再編集）
+  for (const o of pendingOrders) {
+    const y = priceToY(o.price);
+    if (y !== null && Math.abs(my - y) < 15) {
+      selectedLimitId = selectedLimitId === o.id ? null : o.id;
+      selectedPosId = null;
+      redrawFibo();
+      return;
+    }
+  }
+
+  if (selectedPosId !== null || selectedLimitId !== null) {
+    selectedPosId = null;
+    if (selectedLimitId !== null) {
+      const o = pendingOrders.find(o => o.id === selectedLimitId);
+      if (o) o.confirmed = true;
+      selectedLimitId = null;
+    }
+    redrawFibo();
+  }
+});
+
+// TP/SL & 指値ハンドルのヒットテスト
+function hitTPSLHandle(mx, my) {
+  const cx = chartDiv.clientWidth / 2;
+  // ポジションのTP/SL
+  for (const p of positions) {
+    if (p.tp !== null) { const y = priceToY(p.tp); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: p.id, kind: 'tp', obj: p }; }
+    if (p.sl !== null) { const y = priceToY(p.sl); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: p.id, kind: 'sl', obj: p }; }
+    // TP/SL未設定のガイドハンドル
+    if (selectedPosId === p.id) {
+      const isBuy = p.type === 'BUY';
+      if (p.tp === null) { const gy = priceToY(isBuy ? p.price+5 : p.price-5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'tp_new', obj: p }; }
+      if (p.sl === null) { const gy = priceToY(isBuy ? p.price-5 : p.price+5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'sl_new', obj: p }; }
+    }
+  }
+  // 指値のTP/SL
+  for (const o of pendingOrders) {
+    if (o.tp !== null) { const y = priceToY(o.tp); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: o.id, kind: 'tp', obj: o }; }
+    if (o.sl !== null) { const y = priceToY(o.sl); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: o.id, kind: 'sl', obj: o }; }
+    if (selectedLimitId === o.id) {
+      const isBuy = o.type === 'BUY_LIMIT';
+      if (o.tp === null) { const gy = priceToY(isBuy ? o.price+5 : o.price-5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'tp_new', obj: o }; }
+      if (o.sl === null) { const gy = priceToY(isBuy ? o.price-5 : o.price+5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'sl_new', obj: o }; }
+    }
+  }
+  // 指値注文ハンドル（ライン全体で反応）
+  for (const o of pendingOrders) {
+    const y = priceToY(o.price);
+    if (y !== null && Math.abs(my-y) < 12) return { posId: o.id, kind: 'limit', obj: o };
+  }
+  // ポジションラインタップ（TP/SL選択切替）
+  for (const p of positions) {
+    const y = priceToY(p.price);
+    if (y !== null && Math.abs(my-y) < 12) return { posId: p.id, kind: 'select', obj: p };
+  }
+  return null;
+}
+
 fiboCanvas.addEventListener('mousedown', e => {
   if (!fiboActive) return;
   const hit = hitHandle(e.offsetX, e.offsetY);
@@ -391,6 +493,27 @@ function canvasRelPos(e) {
 }
 
 document.addEventListener('mousemove', e => {
+  // TP/SLドラッグ
+  if (tpslDrag) {
+    const rect = fiboCanvas.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const p = pixelToPrice(y);
+    if (p !== null) {
+      if (tpslDrag.kind === 'tp' || tpslDrag.kind === 'tp_new') { tpslDrag.obj.tp = p; }
+      else if (tpslDrag.kind === 'sl' || tpslDrag.kind === 'sl_new') { tpslDrag.obj.sl = p; }
+      else if (tpslDrag.kind === 'limit') {
+        const dp = p - tpslDrag.obj.price;
+        tpslDrag.obj.price = p;
+        // TP/SLも連動移動
+        if (tpslDrag.obj.tp !== null) tpslDrag.obj.tp += dp;
+        if (tpslDrag.obj.sl !== null) tpslDrag.obj.sl += dp;
+        const mid = livePrice || bars1m[curIdx1m]?.c || 0;
+        tpslDrag.obj.type = p < mid ? 'BUY_LIMIT' : 'SELL_LIMIT';
+      }
+      redrawFibo();
+    }
+    return;
+  }
   if (!fiboActive) return;
   const { x, y } = canvasRelPos(e);
 
@@ -435,6 +558,16 @@ document.addEventListener('mousemove', e => {
 });
 
 document.addEventListener('mouseup', e => {
+  if (tpslDrag) {
+    tpslCooldown = Date.now() + 1000;
+    // limitはドラッグ終了しても選択状態を維持（他所クリックで確定）
+    if (tpslDrag.kind === 'limit') selectedLimitId = tpslDrag.obj.id;
+    tpslDrag = null;
+    chart.setScrollEnabled(true);
+    chart.setZoomEnabled(true);
+    redrawFibo();
+    return;
+  }
   if (!fiboActive) return;
   const { x, y } = canvasRelPos(e);
 
@@ -781,14 +914,67 @@ document.addEventListener('touchstart', handleFiboExit, true);
 
   chartDiv.addEventListener('touchstart', e => {
     if (fiboActive || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const rect = chartDiv.getBoundingClientRect();
+    const lx = t.clientX - rect.left, ly = t.clientY - rect.top;
+
+    // TP/SL/指値ハンドルのタッチチェック
+    const tpslHit = hitTPSLHandle(lx, ly);
+    if (tpslHit) {
+      e.preventDefault(); e.stopPropagation();
+      if (tpslHit.kind === 'select') {
+        selectedPosId = selectedPosId === tpslHit.posId ? null : tpslHit.posId;
+        redrawFibo();
+      } else if (tpslHit.kind === 'limit' && selectedLimitId !== tpslHit.obj.id) {
+        // 未選択のlimitラインタップ → 選択
+        selectedLimitId = tpslHit.obj.id;
+        selectedPosId = null;
+        redrawFibo();
+      } else {
+        tpslDrag = tpslHit;
+        chart.setScrollEnabled(false);
+        chart.setZoomEnabled(false);
+      }
+      return;
+    }
+    // ポジションラインタップ
+    for (const p of positions) {
+      const py = priceToY(p.price);
+      if (py !== null && Math.abs(ly - py) < 15) {
+        e.preventDefault(); e.stopPropagation();
+        selectedPosId = selectedPosId === p.id ? null : p.id;
+        selectedLimitId = null;
+        redrawFibo();
+        return;
+      }
+    }
+    // 指値ラインタップ
+    for (const o of pendingOrders) {
+      const oy = priceToY(o.price);
+      if (oy !== null && Math.abs(ly - oy) < 15) {
+        e.preventDefault(); e.stopPropagation();
+        selectedLimitId = selectedLimitId === o.id ? null : o.id;
+        selectedPosId = null;
+        redrawFibo();
+        return;
+      }
+    }
+    // 選択解除
+    if (selectedPosId !== null || selectedLimitId !== null) {
+      if (selectedLimitId !== null) {
+        const o = pendingOrders.find(o => o.id === selectedLimitId);
+        if (o) o.confirmed = true;
+      }
+      selectedPosId = null;
+      selectedLimitId = null;
+      redrawFibo();
+    }
+
     e.preventDefault();
     e.stopPropagation();
     proxyActive = true;
     lpMoved = false;
-    const t = e.touches[0];
     startCX = t.clientX; startCY = t.clientY;
-    const rect = chartDiv.getBoundingClientRect();
-    const lx = t.clientX - rect.left, ly = t.clientY - rect.top;
     // 長押し検出（500ms）→ 描画オブジェクトがあれば編集モードに入る
     lpTimer = setTimeout(() => {
       if (!lpMoved) {
@@ -807,6 +993,26 @@ document.addEventListener('touchstart', handleFiboExit, true);
   }, { passive: false, capture: true });
 
   document.addEventListener('touchmove', e => {
+    // TP/SLタッチドラッグ
+    if (tpslDrag) {
+      e.preventDefault();
+      const t = e.touches[0];
+      const rect = chartDiv.getBoundingClientRect();
+      const y = t.clientY - rect.top;
+      const x = t.clientX - rect.left;
+      const p = pixelToPrice(y);
+      if (p !== null) {
+        if (tpslDrag.kind === 'tp' || tpslDrag.kind === 'tp_new') { tpslDrag.obj.tp = p; }
+        else if (tpslDrag.kind === 'sl' || tpslDrag.kind === 'sl_new') { tpslDrag.obj.sl = p; }
+        else if (tpslDrag.kind === 'limit') {
+          tpslDrag.obj.price = p;
+          const mid = livePrice || bars1m[curIdx1m]?.c || 0;
+          tpslDrag.obj.type = p < mid ? 'BUY_LIMIT' : 'SELL_LIMIT';
+        }
+        redrawFibo();
+      }
+      return;
+    }
     if (!proxyActive) return;
     const t = e.touches[0];
     // 少し動いただけでは長押しキャンセルしない（10px閾値）
@@ -818,6 +1024,15 @@ document.addEventListener('touchstart', handleFiboExit, true);
 
   document.addEventListener('touchend', e => {
     clearTimeout(lpTimer);
+    if (tpslDrag) {
+      tpslCooldown = Date.now() + 1000;
+      if (tpslDrag.kind === 'limit') selectedLimitId = tpslDrag.obj.id;
+      tpslDrag = null;
+      chart.setScrollEnabled(true);
+      chart.setZoomEnabled(true);
+      redrawFibo();
+      return;
+    }
     if (!proxyActive) return;
     proxyActive = false;
     const t = e.changedTouches[0];

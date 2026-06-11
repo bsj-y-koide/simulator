@@ -5,23 +5,53 @@ var realizedPnL = 0; // 確定済み損益
 var sessionStartIdx = 0; // セッション開始時のバーインデックス
 var sessionId = Date.now(); // セッション識別子
 var tradeHistory = []; // このセッションの全トレード履歴
+var pendingOrders = []; // 指値注文 { id, type:'BUY_LIMIT'|'SELL_LIMIT', price, lot, tp, sl, confirmed }
+var selectedLimitId = null; // 編集中の指値ID
+var selectedPosId = null; // TP/SL編集中のポジションID
+var tpslDrag = null; // { posId, kind:'tp'|'sl' } ドラッグ中
+var tpslCooldown = 0; // TP/SL設定直後のクールダウン
 
 const HALF_SPREAD = 0.2; // 2pips = $0.20（片側）、合計4pips
 function getLot() { return parseFloat(document.getElementById('lot').value); }
 
-document.getElementById('btn-buy').addEventListener('click', () => {
+function openPosition(type) {
   const mid = livePrice || bars1m[curIdx1m].c;
-  const price = mid + HALF_SPREAD; // Askで約定
+  const price = type === 'BUY' ? mid + HALF_SPREAD : mid - HALF_SPREAD;
   const entryTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
-  positions.push({ id: ++posId, type: 'BUY', price, lot: getLot(), entryTime, entryIdx: curIdx1m });
+  const pos = { id: ++posId, type, price, lot: getLot(), entryTime, entryIdx: curIdx1m, tp: null, sl: null };
+  positions.push(pos);
+  selectedPosId = null; // 初期状態はTP/SL非表示
   updatePnL(mid);
-});
-document.getElementById('btn-sell').addEventListener('click', () => {
-  const mid = livePrice || bars1m[curIdx1m].c;
-  const price = mid - HALF_SPREAD; // Bidで約定
-  const entryTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
-  positions.push({ id: ++posId, type: 'SELL', price, lot: getLot(), entryTime, entryIdx: curIdx1m });
-  updatePnL(mid);
+}
+
+document.getElementById('btn-buy').addEventListener('click', () => { if (limitTimer === 'fired') { limitTimer = null; return; } openPosition('BUY'); });
+document.getElementById('btn-sell').addEventListener('click', () => { if (limitTimer === 'fired') { limitTimer = null; return; } openPosition('SELL'); });
+
+// 長押しで指値モード
+let limitTimer = null;
+// 長押しで指値モード（どちらのボタンでも同じ：価格位置でBUY/SELL自動判定）
+['btn-buy','btn-sell'].forEach(id => {
+  const btn = document.getElementById(id);
+  function placeLimitOrder() {
+    limitTimer = 'fired';
+    const mid = livePrice || bars1m[curIdx1m].c;
+    // 現在価格より下 → BUY LIMIT、上 → SELL LIMIT
+    const offset = 5;
+    const priceBuy = mid - offset;
+    const priceSell = mid + offset;
+    // デフォルトは下に配置（BUY LIMIT）、ドラッグで上に動かせばSELL LIMITに変わる
+    const limitId = ++posId;
+    pendingOrders.push({ id: limitId, type: 'BUY_LIMIT', price: priceBuy, lot: getLot(), tp: null, sl: null, confirmed: false });
+    selectedLimitId = limitId;
+    selectedPosId = null;
+    redrawFibo();
+  }
+  btn.addEventListener('mousedown', () => { limitTimer = setTimeout(placeLimitOrder, 500); });
+  btn.addEventListener('mouseup', () => { if (limitTimer !== 'fired') clearTimeout(limitTimer); });
+  btn.addEventListener('mouseleave', () => { if (limitTimer !== 'fired') { clearTimeout(limitTimer); limitTimer = null; } });
+  btn.addEventListener('touchstart', e => { limitTimer = setTimeout(() => { e.preventDefault(); placeLimitOrder(); }, 500); }, { passive: false });
+  btn.addEventListener('touchend', () => { if (limitTimer !== 'fired') clearTimeout(limitTimer); });
+  btn.addEventListener('contextmenu', e => e.preventDefault());
 });
 document.getElementById('btn-close').addEventListener('click', () => {
   const mid = livePrice || bars1m[curIdx1m].c;
@@ -69,6 +99,62 @@ document.getElementById('btn-close').addEventListener('click', () => {
   positions = [];
   updatePnL(cur);
 });
+
+// TP/SL到達 & 指値約定チェック（毎ティック呼ばれる）
+function checkTPSLAndLimits(mid) {
+  // ドラッグ中・設定直後はチェックしない
+  if (tpslDrag) return;
+  if (tpslCooldown > Date.now()) return;
+  // TP/SL
+  const toClose = [];
+  positions.forEach(p => {
+    if (p.tp !== null) {
+      if (p.type === 'BUY' && mid >= p.tp) toClose.push({ pos: p, closePrice: p.tp - HALF_SPREAD, reason: 'TP' });
+      if (p.type === 'SELL' && mid <= p.tp) toClose.push({ pos: p, closePrice: p.tp + HALF_SPREAD, reason: 'TP' });
+    }
+    if (p.sl !== null) {
+      if (p.type === 'BUY' && mid <= p.sl) toClose.push({ pos: p, closePrice: p.sl - HALF_SPREAD, reason: 'SL' });
+      if (p.type === 'SELL' && mid >= p.sl) toClose.push({ pos: p, closePrice: p.sl + HALF_SPREAD, reason: 'SL' });
+    }
+  });
+  toClose.forEach(({ pos, closePrice, reason }) => {
+    const diff = pos.type === 'BUY' ? closePrice - pos.price : pos.price - closePrice;
+    const pnlUsd = diff * pos.lot * 100;
+    realizedPnL += pnlUsd;
+    const closeTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
+    const trade = {
+      sessionId, type: pos.type, lot: pos.lot,
+      entryPrice: pos.price, closePrice,
+      entryTime: pos.entryTime, closeTime,
+      entryIdx: pos.entryIdx, closeIdx: curIdx1m,
+      pnlUsd, pnlJpy: Math.round(pnlUsd * JPY_RATE),
+      pips: Math.round(diff * 10) / 10,
+      holdBars: curIdx1m - pos.entryIdx,
+      closeReason: reason
+    };
+    tradeHistory.push(trade);
+    if (db) dbAdd('trades', trade);
+    positions = positions.filter(pp => pp.id !== pos.id);
+    if (selectedPosId === pos.id) selectedPosId = null;
+  });
+
+  // 指値約定
+  const toFill = [];
+  pendingOrders.forEach(o => {
+    if (!o.confirmed) return;
+    if (o.type === 'BUY_LIMIT' && mid <= o.price) toFill.push(o);
+    if (o.type === 'SELL_LIMIT' && mid >= o.price) toFill.push(o);
+  });
+  toFill.forEach(o => {
+    const type = o.type === 'BUY_LIMIT' ? 'BUY' : 'SELL';
+    const price = type === 'BUY' ? o.price + HALF_SPREAD : o.price - HALF_SPREAD;
+    const entryTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
+    positions.push({ id: o.id, type, price, lot: o.lot, entryTime, entryIdx: curIdx1m, tp: o.tp, sl: o.sl });
+    pendingOrders = pendingOrders.filter(pp => pp.id !== o.id);
+  });
+
+  if (toClose.length > 0 || toFill.length > 0) updatePnL(mid);
+}
 
 function calcFloat(mid) {
   let f = 0;
@@ -234,8 +320,68 @@ function drawTradeMarkers() {
 }
 
 function drawPositionLines() {
-  if (positions.length === 0) return;
   const cur = livePrice || bars1m[curIdx1m]?.c || 0;
+  const w = chartDiv.clientWidth;
+
+  // 指値注文ライン
+  pendingOrders.forEach(o => {
+    const y = priceToY(o.price);
+    if (y === null) return;
+    const isBuy = o.type === 'BUY_LIMIT';
+    ctx.save();
+    ctx.strokeStyle = isBuy ? '#42a5f5' : '#ef5350';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([8, 4]);
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = isBuy ? '#42a5f5' : '#ef5350';
+    ctx.fillText(`${o.type} @ ${o.price.toFixed(2)}`, 4, y - 4);
+    // ドラッグハンドル（未確定 or 選択中のみ）
+    if (!o.confirmed || selectedLimitId === o.id) {
+      ctx.beginPath(); ctx.arc(w / 2, y, 6, 0, Math.PI * 2);
+      ctx.fillStyle = isBuy ? '#42a5f5' : '#ef5350'; ctx.globalAlpha = 0.6; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+    }
+    ctx.restore();
+
+    // 指値のTP/SL
+    const isLimitSel = selectedLimitId === o.id;
+    if (o.tp !== null) drawTPSLLine(o.tp, 'TP', true, isBuy ? 'BUY' : 'SELL', o.lot, isLimitSel);
+    if (o.sl !== null) drawTPSLLine(o.sl, 'SL', false, isBuy ? 'BUY' : 'SELL', o.lot, isLimitSel);
+    // 選択中ガイド
+    if (isLimitSel) {
+      if (o.tp === null) {
+        const gy = priceToY(isBuy ? o.price+5 : o.price-5);
+        if (gy !== null) {
+          ctx.save(); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#76ff03'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+          ctx.setLineDash([]); ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#76ff03';
+          ctx.fillText('← TP', w/2-20, gy-5);
+          ctx.beginPath(); ctx.arc(w/2, gy, 7, 0, Math.PI*2);
+          ctx.fillStyle = '#76ff03'; ctx.globalAlpha = 0.6; ctx.fill();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+          ctx.restore();
+        }
+      }
+      if (o.sl === null) {
+        const gy = priceToY(isBuy ? o.price-5 : o.price+5);
+        if (gy !== null) {
+          ctx.save(); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#ff5252'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+          ctx.setLineDash([]); ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ff5252';
+          ctx.fillText('← SL', w/2-20, gy+14);
+          ctx.beginPath(); ctx.arc(w/2, gy, 7, 0, Math.PI*2);
+          ctx.fillStyle = '#ff5252'; ctx.globalAlpha = 0.6; ctx.fill();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+  });
+
+  if (positions.length === 0) return;
   positions.forEach(p => {
     const y = priceToY(p.price);
     if (y === null || y < 0 || y > fiboCanvas.height) return;
@@ -247,23 +393,83 @@ function drawPositionLines() {
     ctx.lineWidth   = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(fiboCanvas.width, y);
-    ctx.stroke();
-    // ラベル
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.9;
-    ctx.font = 'bold 11px monospace';
+    ctx.font = 'bold 12px monospace';
     const pnl  = diff * p.lot * 100;
     const label = `${p.type}  ${fmtJpy(pnl)}`;
-    ctx.font = 'bold 12px monospace';
     const tw = ctx.measureText(label).width;
-    const lx = (chartDiv.clientWidth - tw) / 2 - 4;
+    const lx = (w - tw) / 2 - 4;
     ctx.fillStyle = profit ? '#1b5e20cc' : '#b71c1ccc';
     ctx.fillRect(lx, y - 15, tw + 8, 16);
     ctx.fillStyle = '#fff';
     ctx.fillText(label, lx + 4, y - 3);
     ctx.restore();
+
+    // TP/SLライン & ハンドル
+    const isSelected = selectedPosId === p.id;
+    if (p.tp !== null) drawTPSLLine(p.tp, 'TP', true, p.type, p.lot, isSelected);
+    if (p.sl !== null) drawTPSLLine(p.sl, 'SL', false, p.type, p.lot, isSelected);
+
+    // 選択中: TP/SLドラッグハンドル（未設定なら薄いガイドライン）
+    if (isSelected) {
+      if (p.tp === null) {
+        const guideY = priceToY(isBuy ? p.price + 5 : p.price - 5);
+        if (guideY !== null) {
+          ctx.save(); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#76ff03'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, guideY); ctx.lineTo(w, guideY); ctx.stroke();
+          ctx.setLineDash([]); ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#76ff03';
+          ctx.fillText('← TP', w/2 - 20, guideY - 5);
+          ctx.beginPath(); ctx.arc(w/2, guideY, 7, 0, Math.PI*2);
+          ctx.fillStyle = '#76ff03'; ctx.globalAlpha = 0.6; ctx.fill();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+          ctx.restore();
+        }
+      }
+      if (p.sl === null) {
+        const guideY = priceToY(isBuy ? p.price - 5 : p.price + 5);
+        if (guideY !== null) {
+          ctx.save(); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#ff5252'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, guideY); ctx.lineTo(w, guideY); ctx.stroke();
+          ctx.setLineDash([]); ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ff5252';
+          ctx.fillText('← SL', w/2 - 20, guideY + 14);
+          ctx.beginPath(); ctx.arc(w/2, guideY, 7, 0, Math.PI*2);
+          ctx.fillStyle = '#ff5252'; ctx.globalAlpha = 0.6; ctx.fill();
+          ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
   });
+}
+
+function drawTPSLLine(price, kind, isTP, posType, lot, showHandle) {
+  const y = priceToY(price);
+  if (y === null) return;
+  const w = chartDiv.clientWidth;
+  const color = isTP ? '#76ff03' : '#ff5252';
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.globalAlpha = 1;
+  ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+
+  // ラベル
+  ctx.setLineDash([]);
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = color;
+  ctx.fillText(`${kind} ${price.toFixed(2)}`, 4, y - 4);
+  ctx.restore();
+
+  // ハンドル
+  if (showHandle !== false) {
+    ctx.save();
+    ctx.beginPath(); ctx.arc(w/2, y, 6, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.globalAlpha = 0.6; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.globalAlpha = 1; ctx.stroke();
+    ctx.restore();
+  }
 }
