@@ -1,0 +1,67 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #131722; color: #eee; font-family: monospace; display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+#chart { touch-action: none; }
+
+/* ===== ツールバー ===== */
+#toolbar {
+  background: #1a1a1a; border-bottom: 1px solid #333; flex-shrink: 0;
+}
+#row1 {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 6px; font-size: 11px; flex-wrap: nowrap; overflow-x: auto;
+}
+#row2 {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 6px; border-top: 1px solid #2a2a2a;
+}
+#cur-time  { color: #666; white-space: nowrap; }
+#cur-price { color: #fff; font-size: 14px; font-weight: bold; white-space: nowrap; }
+#pnl-float, #pnl-total { font-size: 11px; font-weight: bold; white-space: nowrap; }
+#pos-info  { color: #aaa; font-size: 11px; margin-left: auto; }
+#row1 #btn-play { background: #1b5e20; padding: 2px 8px; min-height: 22px; min-width: 28px; font-size: 11px; }
+#row1 select { font-size: 11px; min-height: 22px; padding: 1px 2px; }
+#row2 button { flex: 1; min-height: 32px; font-size: 12px; padding: 4px 2px; }
+
+/* ===== チャート ===== */
+#chart { flex: 1; min-height: 0; }
+#chart canvas { touch-action: none; }
+
+/* ===== ボトムバー ===== */
+
+button {
+  border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #fff;
+  padding: 10px 16px; font-size: 14px;
+  min-height: 44px; /* タッチターゲット */
+  -webkit-tap-highlight-color: transparent;
+}
+#btn-buy   { background: #1565c0; flex: 1; }
+#btn-sell  { background: #b71c1c; flex: 1; }
+#btn-close { background: #444;    flex: 1; font-size: 12px; }
+.tool-btn { background: #333; min-height: 32px; font-size: 12px; padding: 4px 6px; }
+.tool-btn.active { background: #f57f17; color: #000; }
+#btn-tool-clear  { background: #2a2a2a; font-size: 11px; min-width: 44px; min-height: 36px; padding: 4px 8px; }
+
+#lot-wrap { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #aaa; }
+select {
+  background: #222; color: #eee; border: 1px solid #444; border-radius: 4px;
+  padding: 6px 4px; font-size: 13px; min-height: 36px;
+}
+
+.tf-btn    { background: #2a2a3a; font-size: 12px; padding: 8px 10px; min-height: 36px; }
+.tf-btn.active { background: #1565c0; }
+#speed-wrap { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #888; flex-shrink: 0; }
+input[type=range] { width: 100px; accent-color: #26a69a; }
+
+#positions {
+  background: #111; border-top: 1px solid #222;
+  padding: 3px 8px; font-size: 11px; min-height: 20px;
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; flex-shrink: 0;
+}
+
+/* スマホ向け追加調整 */
+@media (max-width: 500px) {
+  button { padding: 10px 10px; font-size: 13px; }
+  .tf-btn { padding: 8px 7px; font-size: 11px; }
+  #btn-play { min-width: 64px; }
+  input[type=range] { width: 48px; }
+}
