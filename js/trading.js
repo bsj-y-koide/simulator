@@ -414,7 +414,7 @@ function drawPositionLines() {
     // 選択中: TP/SLドラッグハンドル（未設定なら薄いガイドライン）
     if (isSelected) {
       if (p.tp === null) {
-        const guideY = priceToY(isBuy ? p.price + 5 : p.price - 5);
+        const guideY = priceToY(isBuy ? p.price*(1+0.001) : p.price*(1-0.001));
         if (guideY !== null) {
           ctx.save(); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#76ff03'; ctx.lineWidth = 1.5;
           ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, guideY); ctx.lineTo(w, guideY); ctx.stroke();
@@ -427,7 +427,7 @@ function drawPositionLines() {
         }
       }
       if (p.sl === null) {
-        const guideY = priceToY(isBuy ? p.price - 5 : p.price + 5);
+        const guideY = priceToY(isBuy ? p.price*(1-0.001) : p.price*(1+0.001));
         if (guideY !== null) {
           ctx.save(); ctx.globalAlpha = 0.8; ctx.strokeStyle = '#ff5252'; ctx.lineWidth = 1.5;
           ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, guideY); ctx.lineTo(w, guideY); ctx.stroke();
