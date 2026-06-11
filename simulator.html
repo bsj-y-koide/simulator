@@ -124,10 +124,27 @@ input[type=range] { width: 100px; accent-color: #26a69a; }
   </div>
   <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
     <div style="font-weight:bold;margin-bottom:8px">SMCインジケーター</div>
-    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
       <input type="checkbox" id="fvg-toggle" style="accent-color:#26a69a">
       <span>FVG（Fair Value Gap）</span>
     </label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="range-toggle" style="accent-color:#ff9800">
+      <span>時間帯レンジ</span>
+    </label>
+    <div id="range-settings" style="display:none;margin-top:6px;padding-left:24px;font-size:11px;color:#8b949e">
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+        <span>開始</span>
+        <input id="range-from" type="time" value="07:00" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px;font-size:11px">
+        <span>〜</span>
+        <input id="range-to" type="time" value="09:00" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px;font-size:11px">
+      </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span>終了</span>
+        <input id="range-end" type="time" value="05:00" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px;font-size:11px">
+        <span style="color:#484f58">（翌日）</span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -330,13 +347,15 @@ function saveDrawings() {
     }
   }
   bars1m = data;
-    // 各取引日の開始位置を収集（日付が変わった最初のバー）
+    // 各取引日のJST 9:00（UTC 0:00）以降の最初のバーを収集
     const dayStarts = [];
     let lastDate = '';
     for (let i = 0; i < bars1m.length; i++) {
       const d = new Date(bars1m[i].t * 1000);
+      if (d.getUTCHours() < 0) continue; // UTC 0時未満はスキップ（ありえないが安全策）
       const dateStr = d.toISOString().slice(0, 10);
-      if (dateStr !== lastDate) {
+      if (dateStr !== lastDate && d.getUTCHours() >= 0 && d.getUTCHours() <= 2) {
+        // UTC 0:00〜2:00（JST 9:00〜11:00）の範囲で日の最初のバー
         dayStarts.push(i);
         lastDate = dateStr;
       }
@@ -929,6 +948,116 @@ function drawFVGs() {
   });
 }
 
+// ===== 時間帯レンジ =====
+let rangeEnabled = JSON.parse(localStorage.getItem('rangeEnabled') || 'false');
+let rangeSetting = JSON.parse(localStorage.getItem('rangeSetting') || '{"from":"07:00","to":"09:00","end":"05:00"}');
+let rangeCache = []; // { high, low, drawStartTs, drawEndTs }
+let rangeCacheIdx = -1;
+
+function jstHourMin(ts) {
+  const d = new Date(ts * 1000);
+  return (d.getUTCHours() + 9) % 24 * 60 + d.getUTCMinutes();
+}
+function parseHM(s) { const [h,m] = s.split(':').map(Number); return h * 60 + m; }
+
+function detectRanges() {
+  if (rangeCacheIdx === curIdx1m) return;
+  rangeCacheIdx = curIdx1m;
+  rangeCache = [];
+  if (!rangeEnabled) return;
+
+  const fromMin = parseHM(rangeSetting.from); // JST分
+  const toMin = parseHM(rangeSetting.to);
+  const endMin = parseHM(rangeSetting.end);
+
+  // 1分足でスキャン（表示中のバーのみ）
+  const visibleBars = bars1m.slice(0, curIdx1m + 1);
+  let currentRange = null; // { high, low, rangeEndTs }
+  let drawing = null; // { high, low, drawStartTs }
+
+  for (let i = 0; i < visibleBars.length; i++) {
+    const b = visibleBars[i];
+    const hm = jstHourMin(b.t);
+
+    // レンジ時間帯内
+    if (hm >= fromMin && hm < toMin) {
+      if (!currentRange) {
+        currentRange = { high: b.h, low: b.l };
+      } else {
+        if (b.h > currentRange.high) currentRange.high = b.h;
+        if (b.l < currentRange.low) currentRange.low = b.l;
+      }
+    }
+    // レンジ時間帯終了 → 描画開始
+    else if (currentRange && hm >= toMin) {
+      if (!drawing) {
+        drawing = { high: currentRange.high, low: currentRange.low, drawStartTs: b.t * 1000 };
+      }
+    }
+    // 終了時間到達 → 確定
+    if (drawing && ((endMin < toMin && hm >= endMin && hm < fromMin) || (endMin >= toMin && hm >= endMin))) {
+      rangeCache.push({ ...drawing, drawEndTs: b.t * 1000 });
+      drawing = null;
+      currentRange = null;
+    }
+    // 次のレンジ開始 → 前の描画を確定
+    if (drawing && hm >= fromMin && hm < toMin) {
+      rangeCache.push({ ...drawing, drawEndTs: b.t * 1000 });
+      drawing = null;
+      currentRange = { high: b.h, low: b.l };
+    }
+  }
+  // 未確定の描画中レンジ → 右端まで延長
+  if (drawing) {
+    // 終了時間のTSを計算（当日のJST endMin）
+    const lastBar = visibleBars[visibleBars.length - 1];
+    const lastD = new Date(lastBar.t * 1000);
+    const endH = Math.floor(endMin / 60);
+    const endM = endMin % 60;
+    // JST→UTC: JST endHour - 9
+    let endUTC = new Date(lastD);
+    endUTC.setUTCHours(((endH - 9) + 24) % 24, endM, 0, 0);
+    // endが翌日の場合（例: JST 5:00 = UTC 20:00 前日）
+    if (endUTC.getTime() <= drawing.drawStartTs) {
+      endUTC.setUTCDate(endUTC.getUTCDate() + 1);
+    }
+    rangeCache.push({ ...drawing, drawEndTs: endUTC.getTime() });
+  }
+  // 直近20個に制限
+  if (rangeCache.length > 20) rangeCache = rangeCache.slice(-20);
+}
+
+function drawRanges() {
+  if (!rangeEnabled || rangeCache.length === 0) return;
+  rangeCache.forEach(r => {
+    const x1 = timeToX(r.drawStartTs);
+    const x2 = timeToX(r.drawEndTs);
+    const yH = priceToY(r.high);
+    const yL = priceToY(r.low);
+    if (x1 === null || x2 === null || yH === null || yL === null) return;
+
+    ctx.save();
+    // ゾーン背景
+    ctx.globalAlpha = 0.06;
+    ctx.fillStyle = '#ff9800';
+    ctx.fillRect(x1, yH, x2 - x1, yL - yH);
+    // 高値ライン
+    ctx.globalAlpha = 0.6;
+    ctx.strokeStyle = '#ff9800';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(x1, yH); ctx.lineTo(x2, yH);
+    ctx.stroke();
+    // 安値ライン
+    ctx.beginPath();
+    ctx.moveTo(x1, yL); ctx.lineTo(x2, yL);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+}
+
 // Bid/Ask価格ラベル（Y軸右側のみ）
 function drawBidAskLines() {
   const mid = livePrice || bars1m[curIdx1m]?.c || 0;
@@ -1176,6 +1305,8 @@ function redrawFibo() {
   ctx.clearRect(0, 0, fiboCanvas.width, fiboCanvas.height);
   detectFVGs();
   drawFVGs();
+  detectRanges();
+  drawRanges();
   drawBidAskLines();
   drawTradeMarkers();
   drawPositionLines();
@@ -1850,6 +1981,29 @@ document.getElementById('fvg-toggle').addEventListener('change', e => {
   localStorage.setItem('fvgEnabled', JSON.stringify(fvgEnabled));
   fvgCacheIdx = -1; // キャッシュ無効化
   redrawFibo();
+});
+
+// 時間帯レンジ
+document.getElementById('range-toggle').checked = rangeEnabled;
+document.getElementById('range-from').value = rangeSetting.from;
+document.getElementById('range-to').value = rangeSetting.to;
+document.getElementById('range-end').value = rangeSetting.end;
+document.getElementById('range-settings').style.display = rangeEnabled ? 'block' : 'none';
+
+document.getElementById('range-toggle').addEventListener('change', e => {
+  rangeEnabled = e.target.checked;
+  localStorage.setItem('rangeEnabled', JSON.stringify(rangeEnabled));
+  document.getElementById('range-settings').style.display = rangeEnabled ? 'block' : 'none';
+  rangeCacheIdx = -1;
+  redrawFibo();
+});
+['range-from','range-to','range-end'].forEach(id => {
+  document.getElementById(id).addEventListener('change', e => {
+    rangeSetting[id.replace('range-','')] = e.target.value;
+    localStorage.setItem('rangeSetting', JSON.stringify(rangeSetting));
+    rangeCacheIdx = -1;
+    redrawFibo();
+  });
 });
 
 document.getElementById('btn-settings').addEventListener('click', () => {
