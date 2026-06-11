@@ -417,8 +417,11 @@ function toKLine(b) {
 }
 
 function renderBars() {
-  // bars1m[0..curIdx1m] を現在TFで集計して表示
-  const visible = aggregateBars(bars1m.slice(0, curIdx1m + 1), curTF).map(toKLine);
+  // MA200用に十分なバーを確保しつつ、表示量を制限
+  const maBuffer = 200 * curTF; // MA200に必要な1m足数
+  const displayBars = 2000;     // 画面表示用
+  const startFrom = Math.max(0, curIdx1m - (maBuffer + displayBars));
+  const visible = aggregateBars(bars1m.slice(startFrom, curIdx1m + 1), curTF).map(toKLine);
   chart.applyNewData(visible);
   const bar = bars1m[curIdx1m];
   document.getElementById('cur-time').textContent =
@@ -522,8 +525,9 @@ function flushTicks() { clearInterval(tickTimer); tickTimer = null; tickQueue = 
 function startTickPlay(bar, onDone) {
   const spd    = parseInt(speedEl.value);
   const nTicks = Math.max(4, Math.round(20 - (spd - 1) * 1.8));
-  const tickMs = Math.max(8, Math.round(getBarDelay(spd) / nTicks));
   tickQueue    = generateTicks(bar, nTicks);
+  const effectiveDelay = getBarDelay(spd);
+  const tickMs = Math.max(8, Math.round(effectiveDelay / tickQueue.length));
 
   // 現在1m足より前のバーで確定している TFバーのベース（H/Lを先読みしない）
   const baseBar = (() => {
@@ -558,16 +562,29 @@ function startTickPlay(bar, onDone) {
 }
 
 function getBarDelay(spd) {
-  return [8000,5000,3000,1500,800,400,200,100,40,10][spd - 1];
+  return [8000,5000,3000,1500,600,250,100,50,25,10][spd - 1];
 }
 
 function startPlay() {
   function tick() {
     if (curIdx1m + 1 >= bars1m.length - 1) { stopPlay(); playing = false; btnPlay.textContent = '▶︎'; return; }
-    curIdx1m++;
-    const bar = bars1m[curIdx1m];
-    updateTimeLabel(bar);
-    startTickPlay(bar, () => { if (playing) timer = setTimeout(tick, 0); });
+    const spd = parseInt(speedEl.value);
+    if (spd >= 7) {
+      // 高速モード: ティックアニメーションなし
+      curIdx1m++;
+      const bar = bars1m[curIdx1m];
+      livePrice = bar.c;
+      updateTimeLabel(bar);
+      chart.updateData(toKLine(getPartialBar(curIdx1m)));
+      document.getElementById('cur-price').textContent = bar.c.toFixed(3);
+      updatePnL(bar.c);
+      if (playing) timer = setTimeout(tick, getBarDelay(spd));
+    } else {
+      curIdx1m++;
+      const bar = bars1m[curIdx1m];
+      updateTimeLabel(bar);
+      startTickPlay(bar, () => { if (playing) timer = setTimeout(tick, 0); });
+    }
   }
   timer = setTimeout(tick, 0);
 }
@@ -1319,7 +1336,7 @@ function redrawFibo() {
 }
 
 // 50ms間隔で再描画（スクロール・ズーム・スケール変更に追随）
-setInterval(redrawFibo, 50);
+setInterval(redrawFibo, 100);
 // イベントでも即時反映
 chart.subscribeAction(klinecharts.ActionType.OnVisibleRangeChange, redrawFibo);
 
