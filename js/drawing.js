@@ -380,6 +380,10 @@ chartDiv.addEventListener('click', e => {
   if (hit) {
     if (hit.kind === 'select') {
       selectedPosId = selectedPosId === hit.posId ? null : hit.posId;
+      selectedLimitId = null;
+    } else if (hit.kind === 'limit') {
+      selectedLimitId = selectedLimitId === hit.obj.id ? null : hit.obj.id;
+      selectedPosId = null;
     }
     redrawFibo();
     return;
@@ -560,7 +564,15 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('mouseup', e => {
   if (tpslDrag) {
     tpslCooldown = Date.now() + 1000;
-    // limitはドラッグ終了しても選択状態を維持（他所クリックで確定）
+    // tp_new/sl_newでドラッグなし（クリックのみ）→ ガイド位置に設定
+    if (tpslDrag.kind === 'tp_new' && tpslDrag.obj.tp === null) {
+      const ib = tpslDrag.obj.type === 'BUY' || tpslDrag.obj.type === 'BUY_LIMIT';
+      tpslDrag.obj.tp = ib ? tpslDrag.obj.price*(1+0.001) : tpslDrag.obj.price*(1-0.001);
+    }
+    if (tpslDrag.kind === 'sl_new' && tpslDrag.obj.sl === null) {
+      const ib = tpslDrag.obj.type === 'BUY' || tpslDrag.obj.type === 'BUY_LIMIT';
+      tpslDrag.obj.sl = ib ? tpslDrag.obj.price*(1-0.001) : tpslDrag.obj.price*(1+0.001);
+    }
     if (tpslDrag.kind === 'limit') selectedLimitId = tpslDrag.obj.id;
     tpslDrag = null;
     chart.setScrollEnabled(true);
