@@ -145,7 +145,6 @@ function getPartialBar(idx) {
     } else {
       renderBars();
     }
-    enableYAxisManualMode();
 })();
 
 function toKLine(b) {
@@ -165,19 +164,15 @@ function renderBars() {
   livePrice = bar.c;
   document.getElementById('cur-price').textContent = bar.c.toFixed(3);
   updatePnL(bar.c);
+  enableYAxisManualMode();
 }
 
 // Y軸手動モードに切り替え（初回のみ）→ 縦パン有効化
-var _yAxisManualDone = false;
 function enableYAxisManualMode() {
-  if (_yAxisManualDone) return;
-  _yAxisManualDone = true;
-  setTimeout(() => {
-    try {
-      const pane = chart.getDrawPaneById('candle_pane');
-      if (pane && pane._axis) pane._axis._autoCalcTickFlag = false;
-    } catch(e) {}
-  }, 300);
+  try {
+    const pane = chart.getDrawPaneById('candle_pane');
+    if (pane && pane._axis) pane._axis._autoCalcTickFlag = false;
+  } catch(e) {}
 }
 
 // ===== 時間足切り替え =====
