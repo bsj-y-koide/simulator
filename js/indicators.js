@@ -160,7 +160,7 @@ function detectBOS() {
   const tfBars = aggregateBars(bars1m.slice(0, curIdx1m + 1), curTF);
   if (tfBars.length < 20) return;
 
-  const lookback = 3;
+  const lookback = 5;
   const swings = findSwings(tfBars, lookback);
   if (swings.length < 3) return;
 
@@ -215,7 +215,7 @@ function detectBOS() {
     }
   }
   // 直近100個に制限
-  if (bosCache.length > 100) bosCache = bosCache.slice(-100);
+  if (bosCache.length > 30) bosCache = bosCache.slice(-30);
 }
 
 function drawBOS() {
