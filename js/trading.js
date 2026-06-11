@@ -12,15 +12,31 @@ var tpslDrag = null; // { posId, kind:'tp'|'sl' } ドラッグ中
 var tpslCooldown = 0; // TP/SL設定直後のクールダウン
 
 const HALF_SPREAD = 0.2; // 2pips = $0.20（片側）、合計4pips
+const PIP = 0.1; // 1pip = $0.10 (XAUUSD)
+
+// 自動TP/SL設定
+var autoTPSL = JSON.parse(localStorage.getItem('autoTPSL') || '{"enabled":false,"tp":30,"sl":30}');
 function getLot() { return parseFloat(document.getElementById('lot').value); }
 
 function openPosition(type) {
   const mid = livePrice || bars1m[curIdx1m].c;
   const price = type === 'BUY' ? mid + HALF_SPREAD : mid - HALF_SPREAD;
   const entryTime = new Date(bars1m[curIdx1m].t * 1000).toISOString();
-  const pos = { id: ++posId, type, price, lot: getLot(), entryTime, entryIdx: curIdx1m, tp: null, sl: null };
+  let tp = null, sl = null;
+  if (autoTPSL.enabled) {
+    const tpDist = autoTPSL.tp * PIP;
+    const slDist = autoTPSL.sl * PIP;
+    if (type === 'BUY') {
+      tp = price + tpDist;
+      sl = price - slDist;
+    } else {
+      tp = price - tpDist;
+      sl = price + slDist;
+    }
+  }
+  const pos = { id: ++posId, type, price, lot: getLot(), entryTime, entryIdx: curIdx1m, tp, sl };
   positions.push(pos);
-  selectedPosId = null; // 初期状態はTP/SL非表示
+  selectedPosId = null;
   updatePnL(mid);
 }
 
@@ -40,7 +56,14 @@ let limitTimer = null;
     const type = isBuyBtn ? 'BUY_LIMIT' : 'SELL_LIMIT';
     const price = isBuyBtn ? mid - offset : mid + offset;
     const limitId = ++posId;
-    pendingOrders.push({ id: limitId, type, price, lot: getLot(), tp: null, sl: null, confirmed: false });
+    let ltp = null, lsl = null;
+    if (autoTPSL.enabled) {
+      const tpDist = autoTPSL.tp * PIP;
+      const slDist = autoTPSL.sl * PIP;
+      if (type === 'BUY_LIMIT') { ltp = price + tpDist; lsl = price - slDist; }
+      else { ltp = price - tpDist; lsl = price + slDist; }
+    }
+    pendingOrders.push({ id: limitId, type, price, lot: getLot(), tp: ltp, sl: lsl, confirmed: false });
     selectedLimitId = limitId;
     selectedPosId = null;
     redrawFibo();

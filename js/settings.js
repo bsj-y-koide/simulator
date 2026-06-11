@@ -138,6 +138,26 @@ document.getElementById('ma-apply').addEventListener('click', () => {
   document.getElementById('ma-panel').style.display = 'none';
 });
 
+// ===== 自動TP/SL =====
+document.getElementById('auto-tpsl-toggle').checked = autoTPSL.enabled;
+document.getElementById('auto-tp-pips').value = autoTPSL.tp;
+document.getElementById('auto-sl-pips').value = autoTPSL.sl;
+document.getElementById('auto-tpsl-settings').style.display = autoTPSL.enabled ? 'block' : 'none';
+
+document.getElementById('auto-tpsl-toggle').addEventListener('change', e => {
+  autoTPSL.enabled = e.target.checked;
+  document.getElementById('auto-tpsl-settings').style.display = autoTPSL.enabled ? 'block' : 'none';
+  localStorage.setItem('autoTPSL', JSON.stringify(autoTPSL));
+});
+document.getElementById('auto-tp-pips').addEventListener('change', e => {
+  autoTPSL.tp = parseInt(e.target.value) || 50;
+  localStorage.setItem('autoTPSL', JSON.stringify(autoTPSL));
+});
+document.getElementById('auto-sl-pips').addEventListener('change', e => {
+  autoTPSL.sl = parseInt(e.target.value) || 30;
+  localStorage.setItem('autoTPSL', JSON.stringify(autoTPSL));
+});
+
 // ===== キーボード =====
 document.addEventListener('keydown', e => {
   if (e.key === ' ')          { e.preventDefault(); btnPlay.click(); }

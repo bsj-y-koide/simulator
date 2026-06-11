@@ -86,6 +86,25 @@
       </div>
     </div>
   </div>
+  <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
+    <div style="font-weight:bold;margin-bottom:8px">自動TP/SL</div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="auto-tpsl-toggle" style="accent-color:#76ff03">
+      <span>エントリー時に自動設定</span>
+    </label>
+    <div id="auto-tpsl-settings" style="display:none;padding-left:24px;font-size:11px;color:#8b949e">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="color:#76ff03;min-width:20px">TP</span>
+        <input id="auto-tp-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
+        <span>pips</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:#ff5252;min-width:20px">SL</span>
+        <input id="auto-sl-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
+        <span>pips</span>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- チャート -->
