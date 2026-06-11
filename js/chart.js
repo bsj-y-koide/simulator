@@ -158,13 +158,20 @@ function renderBars() {
   const startFrom = Math.max(0, curIdx1m - (maBuffer + displayBars));
   const visible = aggregateBars(bars1m.slice(startFrom, curIdx1m + 1), curTF).map(toKLine);
   chart.applyNewData(visible);
+  scheduleYAxisManual();
   const bar = bars1m[curIdx1m];
   document.getElementById('cur-time').textContent =
     new Date(bar.t * 1000).toLocaleString('ja-JP', { timeZone:'UTC', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
   livePrice = bar.c;
   document.getElementById('cur-price').textContent = bar.c.toFixed(3);
   updatePnL(bar.c);
-  enableYAxisManualMode();
+}
+
+// applyNewData後にY軸の自動スケールが走った後で無効化する
+var _yManualTimer = null;
+function scheduleYAxisManual() {
+  clearTimeout(_yManualTimer);
+  _yManualTimer = setTimeout(enableYAxisManualMode, 100);
 }
 
 // Y軸手動モードに切り替え（初回のみ）→ 縦パン有効化
