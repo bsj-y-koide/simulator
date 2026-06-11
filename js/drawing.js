@@ -675,6 +675,60 @@ deleteMenu.innerHTML = `
 `;
 document.body.appendChild(deleteMenu);
 
+// 注文用メニュー（TP/SL削除、指値キャンセル、ポジション決済）
+const orderMenu = document.createElement('div');
+Object.assign(orderMenu.style, {
+  position: 'fixed', display: 'none', zIndex: '100',
+  background: '#2b2b2b', border: '1px solid #4a4a4a', borderRadius: '2px',
+  padding: '2px 0', boxShadow: '0 2px 8px rgba(0,0,0,0.7)',
+  fontSize: '13px', color: '#ddd', minWidth: '140px'
+});
+document.body.appendChild(orderMenu);
+
+var orderMenuTarget = null;
+function showOrderMenu(x, y, hit) {
+  orderMenuTarget = hit;
+  let items = '';
+  if (hit.kind === 'tp' || hit.kind === 'tp_new') {
+    items = `<button class="omenu-btn" data-action="del-tp">TP 削除</button>`;
+  } else if (hit.kind === 'sl' || hit.kind === 'sl_new') {
+    items = `<button class="omenu-btn" data-action="del-sl">SL 削除</button>`;
+  } else if (hit.kind === 'limit') {
+    items = `<button class="omenu-btn" data-action="del-limit">指値キャンセル</button>`;
+    if (hit.obj.tp !== null) items += `<button class="omenu-btn" data-action="del-tp">TP 削除</button>`;
+    if (hit.obj.sl !== null) items += `<button class="omenu-btn" data-action="del-sl">SL 削除</button>`;
+  } else if (hit.kind === 'position') {
+    items = `<button class="omenu-btn" data-action="close-pos">決済</button>`;
+    if (hit.obj.tp !== null) items += `<button class="omenu-btn" data-action="del-tp">TP 削除</button>`;
+    if (hit.obj.sl !== null) items += `<button class="omenu-btn" data-action="del-sl">SL 削除</button>`;
+  }
+  orderMenu.innerHTML = items;
+  orderMenu.querySelectorAll('.omenu-btn').forEach(btn => {
+    Object.assign(btn.style, { width:'100%',background:'none',padding:'5px 20px',border:'none',color:'#ddd',fontSize:'13px',cursor:'pointer',textAlign:'left',fontFamily:'monospace',display:'block' });
+    btn.onmouseover = () => btn.style.background = '#3d6a99';
+    btn.onmouseout = () => btn.style.background = 'none';
+  });
+  orderMenu.style.display = 'block';
+  const mh = orderMenu.offsetHeight, mw = orderMenu.offsetWidth;
+  orderMenu.style.left = Math.min(x, window.innerWidth - mw - 4) + 'px';
+  orderMenu.style.top = Math.max(4, y - mh - 4) + 'px';
+}
+function hideOrderMenu() { orderMenu.style.display = 'none'; orderMenuTarget = null; }
+
+orderMenu.addEventListener('click', e => {
+  const action = e.target.dataset?.action;
+  if (!action || !orderMenuTarget) { hideOrderMenu(); return; }
+  const obj = orderMenuTarget.obj;
+  if (action === 'del-tp') obj.tp = null;
+  if (action === 'del-sl') obj.sl = null;
+  if (action === 'del-limit') pendingOrders = pendingOrders.filter(o => o.id !== obj.id);
+  if (action === 'close-pos') document.getElementById('btn-close').click();
+  hideOrderMenu();
+  redrawFibo();
+});
+document.addEventListener('mousedown', e => { if (!orderMenu.contains(e.target)) hideOrderMenu(); });
+document.addEventListener('touchstart', e => { if (!orderMenu.contains(e.target)) hideOrderMenu(); }, { passive: true });
+
 var deleteTargetIdx = -1;
 var deleteTargetType = '';
 function showDeleteMenu(x, y, idx, type) {
@@ -887,7 +941,24 @@ fiboCanvas.addEventListener('contextmenu', e => {
 chartDiv.addEventListener('contextmenu', e => {
   if (fiboActive) return;
   const rect = chartDiv.getBoundingClientRect();
-  const hit = hitDrawObject(e.clientX - rect.left, e.clientY - rect.top);
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  // TP/SL/指値の右クリック
+  const tpslHit = hitTPSLHandle(mx, my);
+  if (tpslHit && tpslHit.kind !== 'select') {
+    e.preventDefault();
+    showOrderMenu(e.clientX, e.clientY, tpslHit);
+    return;
+  }
+  // ポジション/指値ラインの右クリック
+  for (const p of positions) {
+    const y = priceToY(p.price);
+    if (y !== null && Math.abs(my - y) < 12) { e.preventDefault(); showOrderMenu(e.clientX, e.clientY, { kind: 'position', obj: p }); return; }
+  }
+  for (const o of pendingOrders) {
+    const y = priceToY(o.price);
+    if (y !== null && Math.abs(my - y) < 12) { e.preventDefault(); showOrderMenu(e.clientX, e.clientY, { kind: 'limit', obj: o }); return; }
+  }
+  const hit = hitDrawObject(mx, my);
   if (hit) { e.preventDefault(); showDeleteMenu(e.clientX, e.clientY, hit.idx, hit.type); }
 });
 
@@ -987,9 +1058,36 @@ document.addEventListener('touchstart', handleFiboExit, true);
     proxyActive = true;
     lpMoved = false;
     startCX = t.clientX; startCY = t.clientY;
-    // 長押し検出（500ms）→ 描画オブジェクトがあれば編集モードに入る
+    // 長押し検出（500ms）→ 注文/描画メニュー
     lpTimer = setTimeout(() => {
       if (!lpMoved) {
+        // TP/SL/指値/ポジション
+        const tpslH = hitTPSLHandle(lx, ly);
+        if (tpslH && tpslH.kind !== 'select') {
+          proxyActive = false;
+          dispatchMouse('mouseup', t.clientX, t.clientY);
+          showOrderMenu(t.clientX, t.clientY - 60, tpslH);
+          return;
+        }
+        for (const p of positions) {
+          const py = priceToY(p.price);
+          if (py !== null && Math.abs(ly - py) < 12) {
+            proxyActive = false;
+            dispatchMouse('mouseup', t.clientX, t.clientY);
+            showOrderMenu(t.clientX, t.clientY - 60, { kind: 'position', obj: p });
+            return;
+          }
+        }
+        for (const o of pendingOrders) {
+          const oy = priceToY(o.price);
+          if (oy !== null && Math.abs(ly - oy) < 12) {
+            proxyActive = false;
+            dispatchMouse('mouseup', t.clientX, t.clientY);
+            showOrderMenu(t.clientX, t.clientY - 60, { kind: 'limit', obj: o });
+            return;
+          }
+        }
+        // 描画オブジェクト
         const hit = hitDrawObject(lx, ly);
         if (hit) {
           proxyActive = false;
