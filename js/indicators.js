@@ -160,7 +160,8 @@ function detectBOS() {
   const tfBars = aggregateBars(bars1m.slice(0, curIdx1m + 1), curTF);
   if (tfBars.length < 20) return;
 
-  const lookback = 5;
+  // 時間足に応じたlookback（約3時間分）
+  const lookback = Math.max(3, Math.round(180 / curTF));
   const swings = findSwings(tfBars, lookback);
   if (swings.length < 3) return;
 
