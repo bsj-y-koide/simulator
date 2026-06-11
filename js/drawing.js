@@ -426,8 +426,8 @@ function hitTPSLHandle(mx, my) {
     // TP/SL未設定のガイドハンドル
     if (selectedPosId === p.id) {
       const isBuy = p.type === 'BUY';
-      if (p.tp === null) { const gy = priceToY(isBuy ? p.price+5 : p.price-5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'tp_new', obj: p }; }
-      if (p.sl === null) { const gy = priceToY(isBuy ? p.price-5 : p.price+5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'sl_new', obj: p }; }
+      if (p.tp === null) { const gy = priceToY(isBuy ? p.price*(1+0.001) : p.price*(1-0.001)); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'tp_new', obj: p }; }
+      if (p.sl === null) { const gy = priceToY(isBuy ? p.price*(1-0.001) : p.price*(1+0.001)); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'sl_new', obj: p }; }
     }
   }
   // 指値のTP/SL
@@ -436,8 +436,8 @@ function hitTPSLHandle(mx, my) {
     if (o.sl !== null) { const y = priceToY(o.sl); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: o.id, kind: 'sl', obj: o }; }
     if (selectedLimitId === o.id) {
       const isBuy = o.type === 'BUY_LIMIT';
-      if (o.tp === null) { const gy = priceToY(isBuy ? o.price+5 : o.price-5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'tp_new', obj: o }; }
-      if (o.sl === null) { const gy = priceToY(isBuy ? o.price-5 : o.price+5); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'sl_new', obj: o }; }
+      if (o.tp === null) { const gy = priceToY(isBuy ? o.price*(1+0.001) : o.price*(1-0.001)); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'tp_new', obj: o }; }
+      if (o.sl === null) { const gy = priceToY(isBuy ? o.price*(1-0.001) : o.price*(1+0.001)); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'sl_new', obj: o }; }
     }
   }
   // 指値注文ハンドル（ライン全体で反応）
