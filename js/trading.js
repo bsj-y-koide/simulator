@@ -32,16 +32,15 @@ let limitTimer = null;
 // 長押しで指値モード（どちらのボタンでも同じ：価格位置でBUY/SELL自動判定）
 ['btn-buy','btn-sell'].forEach(id => {
   const btn = document.getElementById(id);
+  const isBuyBtn = id === 'btn-buy';
   function placeLimitOrder() {
     limitTimer = 'fired';
     const mid = livePrice || bars1m[curIdx1m].c;
-    // 現在価格より下 → BUY LIMIT、上 → SELL LIMIT
     const offset = 5;
-    const priceBuy = mid - offset;
-    const priceSell = mid + offset;
-    // デフォルトは下に配置（BUY LIMIT）、ドラッグで上に動かせばSELL LIMITに変わる
+    const type = isBuyBtn ? 'BUY_LIMIT' : 'SELL_LIMIT';
+    const price = isBuyBtn ? mid - offset : mid + offset;
     const limitId = ++posId;
-    pendingOrders.push({ id: limitId, type: 'BUY_LIMIT', price: priceBuy, lot: getLot(), tp: null, sl: null, confirmed: false });
+    pendingOrders.push({ id: limitId, type, price, lot: getLot(), tp: null, sl: null, confirmed: false });
     selectedLimitId = limitId;
     selectedPosId = null;
     redrawFibo();
