@@ -1001,46 +1001,65 @@ document.addEventListener('touchstart', handleFiboExit, true);
     const rect = chartDiv.getBoundingClientRect();
     const lx = t.clientX - rect.left, ly = t.clientY - rect.top;
 
-    // TP/SL/指値ハンドルのタッチチェック
+    // TP/SL/指値/ポジションのタッチチェック
     const tpslHit = hitTPSLHandle(lx, ly);
+    let orderHit = null;
     if (tpslHit) {
+      orderHit = tpslHit;
+    } else {
+      for (const p of positions) {
+        const py = priceToY(p.price);
+        if (py !== null && Math.abs(ly - py) < 15) { orderHit = { kind: 'select', posId: p.id, obj: p }; break; }
+      }
+      if (!orderHit) {
+        for (const o of pendingOrders) {
+          const oy = priceToY(o.price);
+          if (oy !== null && Math.abs(ly - oy) < 15) { orderHit = { kind: 'limit_select', obj: o }; break; }
+        }
+      }
+    }
+    if (orderHit) {
       e.preventDefault(); e.stopPropagation();
-      if (tpslHit.kind === 'select') {
-        selectedPosId = selectedPosId === tpslHit.posId ? null : tpslHit.posId;
+      var _orderTouchMoved = false;
+      // 長押し → メニュー表示
+      const orderLpTimer = setTimeout(() => {
+        if (!_orderTouchMoved) {
+          if (orderHit.kind === 'select') {
+            showOrderMenu(t.clientX, t.clientY - 60, { kind: 'position', obj: orderHit.obj });
+          } else if (orderHit.kind === 'limit_select' || orderHit.kind === 'limit') {
+            showOrderMenu(t.clientX, t.clientY - 60, { kind: 'limit', obj: orderHit.obj });
+          } else if (orderHit.kind === 'tp' || orderHit.kind === 'tp_new' || orderHit.kind === 'sl' || orderHit.kind === 'sl_new') {
+            showOrderMenu(t.clientX, t.clientY - 60, orderHit);
+          }
+        }
+      }, 500);
+      const onMove = () => { _orderTouchMoved = true; clearTimeout(orderLpTimer); };
+      const onEnd = () => {
+        clearTimeout(orderLpTimer);
+        document.removeEventListener('touchmove', onMove);
+        document.removeEventListener('touchend', onEnd);
+        if (_orderTouchMoved) return; // ドラッグだった
+        // 短タップ → 選択/ドラッグ開始
+        if (orderHit.kind === 'select') {
+          selectedPosId = selectedPosId === orderHit.posId ? null : orderHit.posId;
+          selectedLimitId = null;
+        } else if (orderHit.kind === 'limit_select') {
+          selectedLimitId = selectedLimitId === orderHit.obj.id ? null : orderHit.obj.id;
+          selectedPosId = null;
+        } else {
+          // TP/SL → ドラッグとして扱うが短タップなのでスキップ
+        }
         redrawFibo();
-      } else if (tpslHit.kind === 'limit' && selectedLimitId !== tpslHit.obj.id) {
-        // 未選択のlimitラインタップ → 選択
-        selectedLimitId = tpslHit.obj.id;
-        selectedPosId = null;
-        redrawFibo();
-      } else {
-        tpslDrag = tpslHit;
+      };
+      document.addEventListener('touchmove', onMove, { passive: true });
+      document.addEventListener('touchend', onEnd, { once: true });
+      // TP/SLハンドルはドラッグも可能
+      if (orderHit.kind !== 'select' && orderHit.kind !== 'limit_select') {
+        tpslDrag = orderHit;
         chart.setScrollEnabled(false);
         chart.setZoomEnabled(false);
       }
       return;
-    }
-    // ポジションラインタップ
-    for (const p of positions) {
-      const py = priceToY(p.price);
-      if (py !== null && Math.abs(ly - py) < 15) {
-        e.preventDefault(); e.stopPropagation();
-        selectedPosId = selectedPosId === p.id ? null : p.id;
-        selectedLimitId = null;
-        redrawFibo();
-        return;
-      }
-    }
-    // 指値ラインタップ
-    for (const o of pendingOrders) {
-      const oy = priceToY(o.price);
-      if (oy !== null && Math.abs(ly - oy) < 15) {
-        e.preventDefault(); e.stopPropagation();
-        selectedLimitId = selectedLimitId === o.id ? null : o.id;
-        selectedPosId = null;
-        redrawFibo();
-        return;
-      }
     }
     // 選択解除
     if (selectedPosId !== null || selectedLimitId !== null) {
