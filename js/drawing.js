@@ -425,23 +425,23 @@ function hitTPSLHandle(mx, my) {
   const cx = chartDiv.clientWidth / 2;
   // ポジションのTP/SL
   for (const p of positions) {
-    if (p.tp !== null) { const y = priceToY(p.tp); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: p.id, kind: 'tp', obj: p }; }
-    if (p.sl !== null) { const y = priceToY(p.sl); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: p.id, kind: 'sl', obj: p }; }
+    if (p.tp !== null) { const y = priceToY(p.tp); if (y !== null && Math.abs(my-y) < 15) return { posId: p.id, kind: 'tp', obj: p }; }
+    if (p.sl !== null) { const y = priceToY(p.sl); if (y !== null && Math.abs(my-y) < 15) return { posId: p.id, kind: 'sl', obj: p }; }
     // TP/SL未設定のガイドハンドル
     if (selectedPosId === p.id) {
       const isBuy = p.type === 'BUY';
-      if (p.tp === null) { const gy = priceToY(isBuy ? p.price+3 : p.price-3); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'tp_new', obj: p }; }
-      if (p.sl === null) { const gy = priceToY(isBuy ? p.price-3 : p.price+3); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: p.id, kind: 'sl_new', obj: p }; }
+      if (p.tp === null) { const gy = priceToY(isBuy ? p.price+3 : p.price-3); if (gy !== null && Math.abs(my-gy) < 15) return { posId: p.id, kind: 'tp_new', obj: p }; }
+      if (p.sl === null) { const gy = priceToY(isBuy ? p.price-3 : p.price+3); if (gy !== null && Math.abs(my-gy) < 15) return { posId: p.id, kind: 'sl_new', obj: p }; }
     }
   }
   // 指値のTP/SL
   for (const o of pendingOrders) {
-    if (o.tp !== null) { const y = priceToY(o.tp); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: o.id, kind: 'tp', obj: o }; }
-    if (o.sl !== null) { const y = priceToY(o.sl); if (y !== null && Math.sqrt((mx-cx)**2+(my-y)**2) < 8) return { posId: o.id, kind: 'sl', obj: o }; }
+    if (o.tp !== null) { const y = priceToY(o.tp); if (y !== null && Math.abs(my-y) < 15) return { posId: o.id, kind: 'tp', obj: o }; }
+    if (o.sl !== null) { const y = priceToY(o.sl); if (y !== null && Math.abs(my-y) < 15) return { posId: o.id, kind: 'sl', obj: o }; }
     if (selectedLimitId === o.id) {
       const isBuy = o.type === 'BUY_LIMIT';
-      if (o.tp === null) { const gy = priceToY(isBuy ? o.price+3 : o.price-3); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'tp_new', obj: o }; }
-      if (o.sl === null) { const gy = priceToY(isBuy ? o.price-3 : o.price+3); if (gy !== null && Math.sqrt((mx-cx)**2+(my-gy)**2) < 8) return { posId: o.id, kind: 'sl_new', obj: o }; }
+      if (o.tp === null) { const gy = priceToY(isBuy ? o.price+3 : o.price-3); if (gy !== null && Math.abs(my-gy) < 15) return { posId: o.id, kind: 'tp_new', obj: o }; }
+      if (o.sl === null) { const gy = priceToY(isBuy ? o.price-3 : o.price+3); if (gy !== null && Math.abs(my-gy) < 15) return { posId: o.id, kind: 'sl_new', obj: o }; }
     }
   }
   // 指値注文ハンドル（ライン全体で反応）
