@@ -602,10 +602,12 @@ var toolBtns = document.querySelectorAll('.tool-btn');
 function enableDrawTool(tool) {
   curTool = tool;
   fiboActive = true;
-  // アクティブチャートのoverlayにpointerEvents設定
+  // アクティブチャートのoverlayにpointerEvents設定 + zIndex上げ
   TFS.forEach(tf => {
-    overlays[tf].canvas.style.pointerEvents = (tf === activeChartTF) ? 'auto' : 'none';
-    overlays[tf].canvas.style.cursor = (tf === activeChartTF) ? 'crosshair' : 'default';
+    const isActive = tf === activeChartTF;
+    overlays[tf].canvas.style.pointerEvents = isActive ? 'auto' : 'none';
+    overlays[tf].canvas.style.cursor = isActive ? 'crosshair' : 'default';
+    overlays[tf].canvas.style.zIndex = isActive ? '50' : '10';
   });
   toolBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === curTool));
   // チャートスクロール/ズーム無効
@@ -624,6 +626,7 @@ function disableDrawTool() {
   TFS.forEach(tf => {
     overlays[tf].canvas.style.pointerEvents = 'none';
     overlays[tf].canvas.style.cursor = 'default';
+    overlays[tf].canvas.style.zIndex = '10';
     charts[tf].setScrollEnabled(true);
     charts[tf].setZoomEnabled(true);
   });
@@ -707,6 +710,7 @@ document.addEventListener('mousemove', e => {
   } else if (curTool === 'fibo') {
     fiboDrag = { p1: dragStartPrice, p2: p, t1: dragStartTime, t2: t, rx1: dragStartX, rx2: x };
   }
+  drawOverlays();
 });
 
 document.addEventListener('mouseup', e => {
