@@ -210,14 +210,6 @@ function drawAllHandles() {
   });
 }
 
-var _drawingsDirty = false;
-var _saveTimer = null;
-function markDrawingsDirty() {
-  if (_drawingsDirty) return;
-  _drawingsDirty = true;
-  clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(() => { _drawingsDirty = false; saveDrawings(); }, 1000);
-}
 
 function redrawFibo() {
   ctx.clearRect(0, 0, fiboCanvas.width, fiboCanvas.height);
@@ -499,7 +491,7 @@ fiboCanvas.addEventListener('mousedown', e => {
   } else if (curTool === 'hline') {
     const p = pixelToPrice(e.offsetY);
     if (p !== null) {
-      hlineSaved.push({ price: p }); markDrawingsDirty();
+      hlineSaved.push({ price: p });
       editMode = true; editTarget = { type: 'hline', idx: hlineSaved.length - 1 };
       curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       redrawFibo();
@@ -607,18 +599,18 @@ document.addEventListener('mouseup', e => {
   if (editHandle) {
     editHandle = null;
     fiboCanvas.style.cursor = 'crosshair';
-    markDrawingsDirty(); redrawFibo();
+    redrawFibo();
   } else if (dragging) {
     if (curTool === 'tline') {
       if (tlineDrag && Math.abs(tlineDrag.p2 - tlineDrag.p1) > 0.001) {
-        tlineSaved.push({ p1: tlineDrag.p1, p2: tlineDrag.p2, t1: tlineDrag.t1, t2: tlineDrag.t2 }); markDrawingsDirty();
+        tlineSaved.push({ p1: tlineDrag.p1, p2: tlineDrag.p2, t1: tlineDrag.t1, t2: tlineDrag.t2 });
         editMode = true; editTarget = { type: 'tline', idx: tlineSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }
       tlineDrag = null;
     } else if (curTool === 'fibo') {
       if (fiboDrag && Math.abs(fiboDrag.p2 - fiboDrag.p1) > 0.001) {
-        fiboSaved.push({ p1: fiboDrag.p1, p2: fiboDrag.p2, t1: fiboDrag.t1, t2: fiboDrag.t2, rx1: fiboDrag.rx1, rx2: fiboDrag.rx2 }); markDrawingsDirty();
+        fiboSaved.push({ p1: fiboDrag.p1, p2: fiboDrag.p2, t1: fiboDrag.t1, t2: fiboDrag.t2, rx1: fiboDrag.rx1, rx2: fiboDrag.rx2 });
         editMode = true; editTarget = { type: 'fibo', idx: fiboSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }
@@ -788,7 +780,7 @@ document.getElementById('dmenu-dup').addEventListener('click', () => {
       col.push(dup);
       editMode = true; editTarget = { type: deleteTargetType, idx: col.length - 1 };
       enableFiboMode(deleteTargetType);
-      markDrawingsDirty(); redrawFibo();
+      redrawFibo();
     }
   }
   hideDeleteMenu();
@@ -797,7 +789,7 @@ document.getElementById('dmenu-del').addEventListener('click', () => {
   if (deleteTargetIdx >= 0) {
     const col = deleteTargetType === 'hline' ? hlineSaved : deleteTargetType === 'tline' ? tlineSaved : fiboSaved;
     col.splice(deleteTargetIdx, 1);
-    markDrawingsDirty(); redrawFibo();
+    redrawFibo();
   }
   hideDeleteMenu();
 });
@@ -854,7 +846,7 @@ fiboCanvas.addEventListener('touchstart', e => {
   } else if (curTool === 'hline') {
     const p = pixelToPrice(y);
     if (p !== null) {
-      hlineSaved.push({ price: p }); markDrawingsDirty();
+      hlineSaved.push({ price: p });
       editMode = true; editTarget = { type: 'hline', idx: hlineSaved.length - 1 };
       curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       redrawFibo();
@@ -913,18 +905,18 @@ fiboCanvas.addEventListener('touchmove', e => {
 fiboCanvas.addEventListener('touchend', e => {
   if (!fiboActive) return;
   clearTimeout(longPressTimer);
-  if (editHandle) { editHandle = null; markDrawingsDirty(); redrawFibo(); }
+  if (editHandle) { editHandle = null; redrawFibo(); }
   else if (touchDragging) {
     if (curTool === 'tline') {
       if (tlineDrag && Math.abs(tlineDrag.p2 - dragStartPrice) > 0.001) {
-        tlineSaved.push({ ...tlineDrag }); markDrawingsDirty();
+        tlineSaved.push({ ...tlineDrag });
         editMode = true; editTarget = { type: 'tline', idx: tlineSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }
       tlineDrag = null;
     } else {
       if (fiboDrag && Math.abs(fiboDrag.p2 - dragStartPrice) > 0.001) {
-        fiboSaved.push({ ...fiboDrag }); markDrawingsDirty();
+        fiboSaved.push({ ...fiboDrag });
         editMode = true; editTarget = { type: 'fibo', idx: fiboSaved.length - 1 };
         curTool = ''; toolBtns.forEach(b => b.classList.remove('active'));
       } else { disableFiboMode(); }

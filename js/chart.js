@@ -127,12 +127,6 @@ function getPartialBar(idx) {
         let loaded = 0;
         function checkDone() { if (++loaded >= 2) renderBars(); }
         sReq.onsuccess = () => {
-          const s = sReq.result;
-          if (s && s.drawings) {
-            fiboSaved = s.drawings.fibo || [];
-            hlineSaved = s.drawings.hline || [];
-            tlineSaved = s.drawings.tline || [];
-          }
           checkDone();
         };
         tReq.onsuccess = () => {

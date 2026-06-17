@@ -46,21 +46,3 @@ function dbAdd(store, data) {
     tx.onerror = e => reject(e.target.error);
   });
 }
-
-function saveDrawings() {
-  if (!db) return;
-  const tx = db.transaction('sessions', 'readwrite');
-  const store = tx.objectStore('sessions');
-  const req = store.get(sessionId);
-  req.onsuccess = () => {
-    const s = req.result;
-    if (s) {
-      s.drawings = {
-        fibo: fiboSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 })),
-        hline: hlineSaved.map(h => ({ price:h.price })),
-        tline: tlineSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 }))
-      };
-      store.put(s);
-    }
-  };
-}

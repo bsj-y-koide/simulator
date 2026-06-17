@@ -109,12 +109,7 @@ document.getElementById('btn-close').addEventListener('click', () => {
         startPrice: bars1m[sessionStartIdx].c,
         trades: tradeHistory.length,
         totalPnL: realizedPnL,
-        totalPnLJpy: Math.round(realizedPnL * JPY_RATE),
-        drawings: {
-          fibo: fiboSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 })),
-          hline: hlineSaved.map(h => ({ price:h.price })),
-          tline: tlineSaved.map(f => ({ p1:f.p1, p2:f.p2, t1:f.t1, t2:f.t2 }))
-        }
+        totalPnLJpy: Math.round(realizedPnL * JPY_RATE)
       });
     };
   }
