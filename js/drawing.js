@@ -420,6 +420,27 @@ chartDiv.addEventListener('click', e => {
   }
 });
 
+// PC用: document clickでも指値確定（chartDiv clickが届かない場合の保険）
+document.addEventListener('click', e => {
+  if (selectedLimitId === null) return;
+  // パネルやメニュー内のクリックは無視
+  if (e.target.closest('#ma-panel') || e.target.closest('.omenu-btn') || deleteMenu.contains(e.target) || orderMenu.contains(e.target)) return;
+  // 指値ライン自体のクリックは無視（chartDiv clickで処理済み）
+  const rect = chartDiv.getBoundingClientRect();
+  const my = e.clientY - rect.top;
+  for (const o of pendingOrders) {
+    if (o.id === selectedLimitId) {
+      const y = priceToY(o.price);
+      if (y !== null && Math.abs(my - y) < 15) return;
+    }
+  }
+  // 確定
+  const o = pendingOrders.find(o => o.id === selectedLimitId);
+  if (o) o.confirmed = true;
+  selectedLimitId = null;
+  redrawFibo();
+});
+
 // TP/SL & 指値ハンドルのヒットテスト
 function hitTPSLHandle(mx, my) {
   const cx = chartDiv.clientWidth / 2;
