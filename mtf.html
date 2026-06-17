@@ -46,6 +46,7 @@ input[type=range] { width: 60px; accent-color: #26a69a; }
   padding: 2px 6px; border-radius: 3px;
 }
 .chart-inner { width: 100%; height: 100%; }
+.chart-pane.active { outline: 1px solid #f57f17; }
 
 #positions {
   background: #111; border-top: 1px solid #222;
@@ -360,6 +361,142 @@ function updatePnL(cur) {
   }).join('  ') + `　<span style="color:#aaa;font-size:11px">確定累計: ${fmtJpy(realizedPnL)}</span>`;
   info.textContent = `${positions.length}件`;
 }
+
+// ===== Canvas オーバーレイ（全チャート共通） =====
+const overlays = {};
+TFS.forEach(tf => {
+  const pane = document.getElementById(`chart-${tf}`);
+  const canvas = document.createElement('canvas');
+  Object.assign(canvas.style, { position:'absolute', top:'0', left:'0', pointerEvents:'none', zIndex:'10' });
+  pane.appendChild(canvas);
+  overlays[tf] = { canvas, ctx: canvas.getContext('2d'), pane };
+
+  new ResizeObserver(() => {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = pane.clientWidth * dpr;
+    canvas.height = pane.clientHeight * dpr;
+    canvas.style.width = pane.clientWidth + 'px';
+    canvas.style.height = pane.clientHeight + 'px';
+    overlays[tf].ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }).observe(pane);
+});
+
+function priceToYForChart(chart, price) {
+  try {
+    const r = chart.convertToPixel({ value: price }, { paneId: 'candle_pane', absolute: true });
+    return r ? r.y : null;
+  } catch(e) { return null; }
+}
+
+// 描画ツール共有
+var hlineSaved = [];
+var fiboSaved = [];
+var tlineSaved = [];
+const FIBO_LEVELS = [0, 1.0, 1.236, 1.382, 1.618, 1.764, 2.0, 2.618];
+
+function drawOverlays() {
+  const mid = livePrice || bars1m[curIdx1m]?.c || 0;
+  const bid = mid - HALF_SPREAD;
+  const ask = mid + HALF_SPREAD;
+
+  TFS.forEach(tf => {
+    const { ctx, pane } = overlays[tf];
+    const ch = charts[tf];
+    const w = pane.clientWidth, h = pane.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    // Bid/Ask ライン
+    [{ price: bid, color: '#ef5350' }, { price: ask, color: '#26a69a' }].forEach(({ price, color }) => {
+      const y = priceToYForChart(ch, price);
+      if (y === null || y < 0 || y > h) return;
+      ctx.save();
+      ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      ctx.font = 'bold 9px monospace'; ctx.fillStyle = color;
+      const lbl = price.toFixed(2);
+      const tw = ctx.measureText(lbl).width;
+      ctx.fillRect(w - tw - 4, y - 5, tw + 4, 11);
+      ctx.fillStyle = '#fff'; ctx.fillText(lbl, w - tw - 2, y + 3);
+      ctx.restore();
+    });
+
+    // ポジションライン
+    positions.forEach(p => {
+      const y = priceToYForChart(ch, p.price);
+      if (y === null || y < 0 || y > h) return;
+      const isBuy = p.type === 'BUY';
+      const diff = isBuy ? mid - p.price : p.price - mid;
+      const profit = diff >= 0;
+      ctx.save();
+      ctx.strokeStyle = isBuy ? '#42a5f5' : '#ef5350';
+      ctx.lineWidth = 1.5; ctx.setLineDash([6,4]); ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 0.9;
+      ctx.font = 'bold 10px monospace';
+      const pnl = diff * p.lot * 100;
+      const label = `${p.type} ${fmtJpy(pnl)}`;
+      const tw = ctx.measureText(label).width;
+      const lx = (w - tw) / 2 - 4;
+      ctx.fillStyle = profit ? '#1b5e20cc' : '#b71c1ccc';
+      ctx.fillRect(lx, y - 12, tw + 8, 14);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(label, lx + 4, y - 1);
+      ctx.restore();
+
+      // TP/SL
+      if (p.tp !== null) {
+        const ty = priceToYForChart(ch, p.tp);
+        if (ty !== null) { ctx.save(); ctx.strokeStyle = '#76ff03'; ctx.lineWidth = 1; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, ty); ctx.lineTo(w, ty); ctx.stroke(); ctx.setLineDash([]); ctx.font = '9px monospace'; ctx.fillStyle = '#76ff03'; ctx.fillText('TP', 4, ty - 2); ctx.restore(); }
+      }
+      if (p.sl !== null) {
+        const sy = priceToYForChart(ch, p.sl);
+        if (sy !== null) { ctx.save(); ctx.strokeStyle = '#ff5252'; ctx.lineWidth = 1; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke(); ctx.setLineDash([]); ctx.font = '9px monospace'; ctx.fillStyle = '#ff5252'; ctx.fillText('SL', 4, sy - 2); ctx.restore(); }
+      }
+    });
+
+    // 水平線
+    hlineSaved.forEach(hl => {
+      const y = priceToYForChart(ch, hl.price);
+      if (y === null || y < 0 || y > h) return;
+      ctx.save();
+      ctx.strokeStyle = '#ffeb3b'; ctx.lineWidth = 1; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      ctx.font = 'bold 9px monospace'; ctx.fillStyle = '#ffeb3b';
+      ctx.fillText(hl.price.toFixed(2), 4, y - 2);
+      ctx.restore();
+    });
+  });
+}
+
+setInterval(drawOverlays, 100);
+
+// ===== アクティブチャート =====
+var activeChartTF = 5;
+document.querySelectorAll('.chart-pane').forEach(pane => {
+  pane.addEventListener('click', () => {
+    const tf = parseInt(pane.querySelector('.chart-inner').id.replace('chart-', ''));
+    activeChartTF = tf;
+    document.querySelectorAll('.chart-pane').forEach(p => p.style.outline = 'none');
+    pane.style.outline = '1px solid #f57f17';
+  });
+});
+
+// ===== 描画ツール（水平線） =====
+// アクティブチャート上でダブルクリック → 水平線追加
+document.querySelectorAll('.chart-pane').forEach(pane => {
+  pane.addEventListener('dblclick', e => {
+    const tf = parseInt(pane.querySelector('.chart-inner').id.replace('chart-', ''));
+    const rect = pane.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    try {
+      const r = charts[tf].convertFromPixel({ x: 100, y }, { paneId: 'candle_pane', absolute: true });
+      if (r && r.value) {
+        hlineSaved.push({ price: r.value });
+        drawOverlays();
+      }
+    } catch(e) {}
+  });
+});
 
 // キーボード
 document.addEventListener('keydown', e => {
