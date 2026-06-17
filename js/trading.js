@@ -130,13 +130,15 @@ function checkTPSLAndLimits(mid) {
   // TP/SL
   const toClose = [];
   positions.forEach(p => {
-    if (p.tp !== null) {
-      if (p.type === 'BUY' && mid >= p.tp) toClose.push({ pos: p, closePrice: p.tp - HALF_SPREAD, reason: 'TP' });
-      if (p.type === 'SELL' && mid <= p.tp) toClose.push({ pos: p, closePrice: p.tp + HALF_SPREAD, reason: 'TP' });
+    // TPとSLは片方のみトリガー（TPを優先）
+    let hit = false;
+    if (!hit && p.tp !== null) {
+      if (p.type === 'BUY' && mid >= p.tp) { toClose.push({ pos: p, closePrice: p.tp - HALF_SPREAD, reason: 'TP' }); hit = true; }
+      if (p.type === 'SELL' && mid <= p.tp) { toClose.push({ pos: p, closePrice: p.tp + HALF_SPREAD, reason: 'TP' }); hit = true; }
     }
-    if (p.sl !== null) {
-      if (p.type === 'BUY' && mid <= p.sl) toClose.push({ pos: p, closePrice: p.sl - HALF_SPREAD, reason: 'SL' });
-      if (p.type === 'SELL' && mid >= p.sl) toClose.push({ pos: p, closePrice: p.sl + HALF_SPREAD, reason: 'SL' });
+    if (!hit && p.sl !== null) {
+      if (p.type === 'BUY' && mid <= p.sl) { toClose.push({ pos: p, closePrice: p.sl - HALF_SPREAD, reason: 'SL' }); hit = true; }
+      if (p.type === 'SELL' && mid >= p.sl) { toClose.push({ pos: p, closePrice: p.sl + HALF_SPREAD, reason: 'SL' }); hit = true; }
     }
   });
   toClose.forEach(({ pos, closePrice, reason }) => {
