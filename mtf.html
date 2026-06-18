@@ -625,10 +625,9 @@ function enableDrawTool(tool) {
   fiboActive = true;
   // アクティブチャートのoverlayにpointerEvents設定 + zIndex上げ
   TFS.forEach(tf => {
-    const isActive = tf === activeChartTF;
-    overlays[tf].canvas.style.pointerEvents = isActive ? 'auto' : 'none';
-    overlays[tf].canvas.style.cursor = isActive ? 'crosshair' : 'default';
-    overlays[tf].canvas.style.zIndex = isActive ? '50' : '10';
+    overlays[tf].canvas.style.pointerEvents = 'auto';
+    overlays[tf].canvas.style.cursor = 'crosshair';
+    overlays[tf].canvas.style.zIndex = '50';
   });
   toolBtns.forEach(b => b.classList.toggle('active', b.dataset.tool === curTool));
   // チャートスクロール/ズーム無効
@@ -695,7 +694,8 @@ function timeToXOnChart(tf, ts) {
 // canvas上のmousedownで描画開始
 TFS.forEach(tf => {
   overlays[tf].canvas.addEventListener('mousedown', e => {
-    if (!fiboActive || tf !== activeChartTF) return;
+    if (!fiboActive) return;
+    selectChartPane(tf); // ドラッグ開始したチャートをアクティブに
     e.preventDefault();
     if (curTool === 'hline') {
       const p = pixelToPriceOnChart(tf, e.offsetY);
