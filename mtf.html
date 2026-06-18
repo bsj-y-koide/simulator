@@ -948,11 +948,12 @@ document.addEventListener('mousemove', e => {
 
   // TP/SL drag
   if (tpslDrag) {
-    const canvas = overlays[activeChartTF]?.canvas;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
+    const dragTF = tpslDrag.tf || activeChartTF;
+    const pane = overlays[dragTF]?.pane;
+    if (!pane) return;
+    const rect = pane.getBoundingClientRect();
     const y = e.clientY - rect.top;
-    const p = pixelToPriceOnChart(activeChartTF, y);
+    const p = pixelToPriceOnChart(dragTF, y);
     if (p !== null) {
       if (tpslDrag.kind === 'tp' || tpslDrag.kind === 'tp_new') {
         tpslDrag.obj.tp = p;
@@ -1095,7 +1096,7 @@ Object.assign(deleteMenu.style, {
   fontSize: '13px', color: '#ddd', minWidth: '120px'
 });
 const menuItemStyle = 'width:100%;background:none;padding:5px 20px;border:none;color:#ddd;font-size:13px;cursor:pointer;text-align:left;font-family:monospace;display:block';
-deleteMenu.innerHTML = `<button id="dmenu-del" style="${menuItemStyle};color:#ff6b6b" onmouseover="this.style.background='#3d6a99'" onmouseout="this.style.background='none'">削除</button>`;
+deleteMenu.innerHTML = `<button id="dmenu-edit" style="${menuItemStyle}" onmouseover="this.style.background='#3d6a99'" onmouseout="this.style.background='none'">編集</button><div style="height:1px;background:#4a4a4a;margin:2px 0"></div><button id="dmenu-del" style="${menuItemStyle};color:#ff6b6b" onmouseover="this.style.background='#3d6a99'" onmouseout="this.style.background='none'">削除</button>`;
 document.body.appendChild(deleteMenu);
 
 var deleteTargetIdx = -1;
@@ -1110,6 +1111,19 @@ function showDeleteMenu(x, y, idx, type) {
 }
 function hideDeleteMenu() { deleteMenu.style.display = 'none'; deleteTargetIdx = -1; deleteTargetType = ''; }
 
+document.getElementById('dmenu-edit').addEventListener('click', () => {
+  if (deleteTargetIdx >= 0 && deleteTargetType !== 'limit') {
+    editMode = true;
+    editTarget = { type: deleteTargetType, idx: deleteTargetIdx };
+    // overlayを有効化
+    TFS.forEach(tf => {
+      overlays[tf].canvas.style.pointerEvents = tf === activeChartTF ? 'auto' : 'none';
+      overlays[tf].canvas.style.zIndex = tf === activeChartTF ? '50' : '10';
+    });
+    drawOverlays();
+  }
+  hideDeleteMenu();
+});
 document.getElementById('dmenu-del').addEventListener('click', () => {
   if (deleteTargetIdx >= 0) {
     if (deleteTargetType === 'limit') {
@@ -1152,13 +1166,48 @@ TFS.forEach(tf => {
   });
 });
 
-// ===== TP/SL position click selection =====
+// ===== TP/SL position click + drag =====
 TFS.forEach(tf => {
-  overlays[tf].pane.addEventListener('click', e => {
+  const paneEl = overlays[tf].pane;
+
+  // mousedown: TP/SLドラッグ開始
+  paneEl.addEventListener('mousedown', e => {
     if (fiboActive || editMode) return;
-    const rect = overlays[tf].pane.getBoundingClientRect();
+    const rect = paneEl.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const w = paneEl.clientWidth;
+
+    // TP/SLハンドルチェック
+    if (selectedPosId !== null) {
+      const selPos = positions.find(p => p.id === selectedPosId);
+      if (selPos) {
+        const tpPrice = selPos.tp !== null ? selPos.tp : (selPos.type === 'BUY' ? selPos.price + 3 : selPos.price - 3);
+        const slPrice = selPos.sl !== null ? selPos.sl : (selPos.type === 'BUY' ? selPos.price - 3 : selPos.price + 3);
+        const tpY = priceToYForChart(charts[tf], tpPrice);
+        const slY = priceToYForChart(charts[tf], slPrice);
+        if (tpY !== null && Math.abs(my - tpY) < 15) {
+          if (selPos.tp === null) selPos.tp = tpPrice;
+          tpslDrag = { obj: selPos, kind: 'tp', tf };
+          TFS.forEach(t => { charts[t].setScrollEnabled(false); charts[t].setZoomEnabled(false); });
+          e.preventDefault(); e.stopPropagation();
+          return;
+        }
+        if (slY !== null && Math.abs(my - slY) < 15) {
+          if (selPos.sl === null) selPos.sl = slPrice;
+          tpslDrag = { obj: selPos, kind: 'sl', tf };
+          TFS.forEach(t => { charts[t].setScrollEnabled(false); charts[t].setZoomEnabled(false); });
+          e.preventDefault(); e.stopPropagation();
+          return;
+        }
+      }
+    }
+  }, true);
+
+  // click: ポジション選択
+  paneEl.addEventListener('click', e => {
+    if (fiboActive || editMode || tpslDrag) return;
+    const rect = paneEl.getBoundingClientRect();
     const my = e.clientY - rect.top;
-    // Check if click is near a position line
     for (const p of positions) {
       const y = priceToYForChart(charts[tf], p.price);
       if (y !== null && Math.abs(my - y) < 15) {
@@ -1167,7 +1216,6 @@ TFS.forEach(tf => {
         return;
       }
     }
-    // Click elsewhere deselects
     if (selectedPosId !== null) {
       selectedPosId = null;
       drawOverlays();
