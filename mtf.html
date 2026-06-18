@@ -593,15 +593,20 @@ setInterval(drawOverlays, 100);
 
 // ===== アクティブチャート =====
 var activeChartTF = 5;
+function selectChartPane(tf) {
+  activeChartTF = tf;
+  document.querySelectorAll('.chart-pane').forEach(p => p.style.outline = 'none');
+  const target = document.getElementById(`chart-${tf}`)?.closest('.chart-pane');
+  if (target) target.style.outline = '1px solid #f57f17';
+}
 document.querySelectorAll('.chart-pane').forEach(pane => {
-  pane.addEventListener('mousedown', e => {
-    // 描画ツールがアクティブな場合はアクティブチャート切替のみ（ドラッグ処理で使うため）
+  pane.addEventListener('mousedown', () => {
     const tf = parseInt(pane.querySelector('.chart-inner').id.replace('chart-', ''));
-    activeChartTF = tf;
-    document.querySelectorAll('.chart-pane').forEach(p => p.style.outline = 'none');
-    pane.style.outline = '1px solid #f57f17';
+    selectChartPane(tf);
   });
 });
+// 初期状態で5分足を選択
+selectChartPane(5);
 
 // ===== 描画ツール =====
 var curTool = '';
