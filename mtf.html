@@ -446,19 +446,36 @@ function drawOverlays() {
     ctx.clearRect(0, 0, w, h);
 
     // Bid/Ask ライン
-    [{ price: bid, color: '#ef5350' }, { price: ask, color: '#26a69a' }].forEach(({ price, color }) => {
-      const y = priceToYForChart(ch, price);
+    const bidY = priceToYForChart(ch, bid);
+    const askY = priceToYForChart(ch, ask);
+    [{ price: bid, color: '#ef5350', y: bidY }, { price: ask, color: '#26a69a', y: askY }].forEach(({ price, color, y }) => {
       if (y === null || y < 0 || y > h) return;
       ctx.save();
       ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.setLineDash([]);
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-      ctx.font = 'bold 9px monospace'; ctx.fillStyle = color;
-      const lbl = price.toFixed(2);
-      const tw = ctx.measureText(lbl).width;
-      ctx.fillRect(w - tw - 4, y - 5, tw + 4, 11);
-      ctx.fillStyle = '#fff'; ctx.fillText(lbl, w - tw - 2, y + 3);
       ctx.restore();
     });
+    // ラベル（重ならないよう調整）
+    if (bidY !== null && askY !== null) {
+      ctx.save();
+      ctx.font = 'bold 9px monospace';
+      const lblH = 11;
+      let by = bidY, ay = askY;
+      if (Math.abs(by - ay) < lblH + 2) {
+        const mid2 = (by + ay) / 2;
+        ay = mid2 - lblH / 2 - 1;
+        by = mid2 + lblH / 2 + 1;
+      }
+      [{ price: bid, color: '#ef5350', y: by }, { price: ask, color: '#26a69a', y: ay }].forEach(({ price, color, y }) => {
+        const lbl = price.toFixed(2);
+        const tw = ctx.measureText(lbl).width;
+        ctx.fillStyle = color;
+        ctx.fillRect(w - tw - 4, y - 5, tw + 4, lblH);
+        ctx.fillStyle = '#fff';
+        ctx.fillText(lbl, w - tw - 2, y + 3);
+      });
+      ctx.restore();
+    }
 
     // ポジションライン
     positions.forEach(p => {
