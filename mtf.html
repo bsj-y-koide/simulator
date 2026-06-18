@@ -332,8 +332,8 @@ function openPosition(type) {
   updatePnL(mid);
 }
 
-document.getElementById('btn-buy').addEventListener('click', () => openPosition('BUY'));
-document.getElementById('btn-sell').addEventListener('click', () => openPosition('SELL'));
+document.getElementById('btn-buy').addEventListener('click', () => { if (limitFired) { limitFired = false; return; } openPosition('BUY'); });
+document.getElementById('btn-sell').addEventListener('click', () => { if (limitFired) { limitFired = false; return; } openPosition('SELL'); });
 document.getElementById('btn-close').addEventListener('click', () => {
   const mid = livePrice || bars1m[curIdx1m].c;
   for (const p of positions) {
@@ -363,8 +363,22 @@ function checkTPSLAndLimits(mid) {
     const diff = pos.type === 'BUY' ? closePrice - pos.price : pos.price - closePrice;
     realizedPnL += diff * pos.lot * 100;
     positions = positions.filter(pp => pp.id !== pos.id);
+    if (selectedPosId === pos.id) selectedPosId = null;
   });
-  if (toClose.length > 0) updatePnL(mid);
+
+  // Check pending limit orders
+  const toFill = [];
+  pendingOrders.forEach(ord => {
+    if (ord.type === 'BUY' && mid <= ord.price) toFill.push(ord);
+    if (ord.type === 'SELL' && mid >= ord.price) toFill.push(ord);
+  });
+  toFill.forEach(ord => {
+    const price = ord.type === 'BUY' ? ord.price + HALF_SPREAD : ord.price - HALF_SPREAD;
+    positions.push({ id: ord.id, type: ord.type, price, lot: ord.lot, tp: null, sl: null, entryTime: new Date(bars1m[curIdx1m].t * 1000).toISOString(), entryIdx: curIdx1m });
+    pendingOrders = pendingOrders.filter(o => o.id !== ord.id);
+  });
+
+  if (toClose.length > 0 || toFill.length > 0) updatePnL(mid);
 }
 
 function calcFloat(mid) {
@@ -541,6 +555,85 @@ function drawOverlays() {
     if (typeof tlineDrag !== 'undefined' && tlineDrag && tf === activeChartTF) {
       _drawTLineOnCtx(ctx, ch, w, h, tlineDrag.p1, tlineDrag.p2, tlineDrag.t1, tlineDrag.t2, tf, 0.5);
     }
+
+    // Edit mode handles (active chart only)
+    if (editMode && editTarget && tf === activeChartTF) {
+      const handles = getEditHandles(editTarget, tf);
+      handles.forEach(hp => {
+        if (hp.y === null || hp.y < 0 || hp.y > h) return;
+        ctx.save();
+        ctx.fillStyle = '#ffffffcc';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(hp.x, hp.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
+    // TP/SL guide handles for selected position
+    if (selectedPosId !== null) {
+      const selPos = positions.find(p => p.id === selectedPosId);
+      if (selPos) {
+        const entryY = priceToYForChart(ch, selPos.price);
+        if (entryY !== null && entryY >= 0 && entryY <= h) {
+          // TP handle (green circle above/below based on tp value or default)
+          const tpPrice = selPos.tp !== null ? selPos.tp : (selPos.type === 'BUY' ? selPos.price + 3 : selPos.price - 3);
+          const slPrice = selPos.sl !== null ? selPos.sl : (selPos.type === 'BUY' ? selPos.price - 3 : selPos.price + 3);
+          const tpY = priceToYForChart(ch, tpPrice);
+          const slY = priceToYForChart(ch, slPrice);
+
+          if (tpY !== null) {
+            ctx.save();
+            ctx.fillStyle = '#76ff03';
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(w / 2, tpY, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.font = 'bold 9px monospace';
+            ctx.fillStyle = '#76ff03';
+            ctx.fillText('TP ' + tpPrice.toFixed(2), w / 2 + 12, tpY + 3);
+            ctx.restore();
+          }
+          if (slY !== null) {
+            ctx.save();
+            ctx.fillStyle = '#ff5252';
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(w / 2, slY, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.font = 'bold 9px monospace';
+            ctx.fillStyle = '#ff5252';
+            ctx.fillText('SL ' + slPrice.toFixed(2), w / 2 + 12, slY + 3);
+            ctx.restore();
+          }
+        }
+      }
+    }
+
+    // Pending limit order lines
+    pendingOrders.forEach(ord => {
+      const y = priceToYForChart(ch, ord.price);
+      if (y === null || y < 0 || y > h) return;
+      ctx.save();
+      ctx.strokeStyle = ord.type === 'BUY' ? '#42a5f5' : '#ef5350';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 0.9;
+      ctx.font = 'bold 9px monospace';
+      ctx.fillStyle = ord.type === 'BUY' ? '#42a5f5' : '#ef5350';
+      ctx.fillText(`LIMIT ${ord.type} ${ord.lot} @ ${ord.price.toFixed(2)}`, 4, y - 3);
+      ctx.restore();
+    });
   });
 }
 
@@ -589,6 +682,47 @@ function _drawTLineOnCtx(ctx, ch, w, h, p1, p2, t1, t2, tf, alpha) {
   ctx.restore();
 }
 
+// Get handle positions for edit mode
+function getEditHandles(target, tf) {
+  const ch = charts[tf];
+  const w = overlays[tf].pane.clientWidth;
+  if (target.type === 'hline') {
+    const hl = hlineSaved[target.idx];
+    if (!hl) return [];
+    const y = priceToYForChart(ch, hl.price);
+    return [{ x: w / 2, y, key: 'price' }];
+  } else if (target.type === 'tline') {
+    const tl = tlineSaved[target.idx];
+    if (!tl) return [];
+    const x1 = timeToXOnChart(tf, tl.t1), y1 = priceToYForChart(ch, tl.p1);
+    const x2 = timeToXOnChart(tf, tl.t2), y2 = priceToYForChart(ch, tl.p2);
+    return [
+      { x: x1, y: y1, key: 'p1' },
+      { x: x2, y: y2, key: 'p2' }
+    ];
+  } else if (target.type === 'fibo') {
+    const fb = fiboSaved[target.idx];
+    if (!fb) return [];
+    const x1 = timeToXOnChart(tf, fb.t1), y1 = priceToYForChart(ch, fb.p1);
+    const x2 = timeToXOnChart(tf, fb.t2), y2 = priceToYForChart(ch, fb.p2);
+    return [
+      { x: x1, y: y1, key: 'p1' },
+      { x: x2, y: y2, key: 'p2' }
+    ];
+  }
+  return [];
+}
+
+function hitHandle(target, tf, mx, my) {
+  const handles = getEditHandles(target, tf);
+  for (const h of handles) {
+    if (h.x !== null && h.y !== null && Math.sqrt((mx - h.x) ** 2 + (my - h.y) ** 2) < 12) {
+      return h.key;
+    }
+  }
+  return null;
+}
+
 setInterval(drawOverlays, 100);
 
 // ===== アクティブチャート =====
@@ -607,6 +741,18 @@ document.querySelectorAll('.chart-pane').forEach(pane => {
 });
 // 初期状態で5分足を選択
 selectChartPane(5);
+
+// ===== Edit Mode =====
+var editMode = false;
+var editTarget = null; // {type, idx}
+var editHandle = null; // which handle is being dragged
+
+// ===== TP/SL click-to-select =====
+var selectedPosId = null;
+
+// ===== Limit Order long press =====
+var limitTimer = null;
+var limitFired = false;
 
 // ===== 描画ツール =====
 var curTool = '';
@@ -662,7 +808,9 @@ toolBtns.forEach(btn => {
 });
 
 document.getElementById('btn-tool-clear').addEventListener('click', () => {
-  hlineSaved = []; fiboSaved = []; tlineSaved = [];
+  hlineSaved = []; fiboSaved = []; tlineSaved = []; pendingOrders = [];
+  editMode = false; editTarget = null; editHandle = null;
+  selectedPosId = null;
   disableDrawTool();
   drawOverlays();
 });
@@ -691,9 +839,54 @@ function timeToXOnChart(tf, ts) {
   } catch(e) { return null; }
 }
 
-// canvas上のmousedownで描画開始
+// canvas上のmousedownで描画開始 + edit mode + TP/SL drag
 TFS.forEach(tf => {
   overlays[tf].canvas.addEventListener('mousedown', e => {
+    const mx = e.offsetX, my = e.offsetY;
+
+    // Check edit mode handle hit first
+    if (editMode && editTarget && tf === activeChartTF) {
+      const hk = hitHandle(editTarget, tf, mx, my);
+      if (hk) {
+        editHandle = hk;
+        e.preventDefault();
+        return;
+      }
+      // Click outside handle => exit edit mode
+      editMode = false;
+      editTarget = null;
+      editHandle = null;
+      disableDrawTool();
+      return;
+    }
+
+    // Check TP/SL guide handle drag
+    if (selectedPosId !== null) {
+      const selPos = positions.find(p => p.id === selectedPosId);
+      if (selPos) {
+        const w = overlays[tf].pane.clientWidth;
+        const tpPrice = selPos.tp !== null ? selPos.tp : (selPos.type === 'BUY' ? selPos.price + 3 : selPos.price - 3);
+        const slPrice = selPos.sl !== null ? selPos.sl : (selPos.type === 'BUY' ? selPos.price - 3 : selPos.price + 3);
+        const tpY = priceToYForChart(charts[tf], tpPrice);
+        const slY = priceToYForChart(charts[tf], slPrice);
+        if (tpY !== null && Math.abs(my - tpY) < 15 && Math.abs(mx - w / 2) < 30) {
+          tpslDrag = { obj: selPos, kind: selPos.tp !== null ? 'tp' : 'tp_new' };
+          // Initialize tp if null
+          if (selPos.tp === null) selPos.tp = tpPrice;
+          TFS.forEach(t => { charts[t].setScrollEnabled(false); charts[t].setZoomEnabled(false); });
+          e.preventDefault();
+          return;
+        }
+        if (slY !== null && Math.abs(my - slY) < 15 && Math.abs(mx - w / 2) < 30) {
+          tpslDrag = { obj: selPos, kind: selPos.sl !== null ? 'sl' : 'sl_new' };
+          if (selPos.sl === null) selPos.sl = slPrice;
+          TFS.forEach(t => { charts[t].setScrollEnabled(false); charts[t].setZoomEnabled(false); });
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+
     if (!fiboActive) return;
     selectChartPane(tf); // ドラッグ開始したチャートをアクティブに
     e.preventDefault();
@@ -701,7 +894,17 @@ TFS.forEach(tf => {
       const p = pixelToPriceOnChart(tf, e.offsetY);
       if (p !== null) {
         hlineSaved.push({ price: p });
-        disableDrawTool();
+        // Enter edit mode
+        editMode = true;
+        editTarget = { type: 'hline', idx: hlineSaved.length - 1 };
+        editHandle = null;
+        // Keep canvas interactive
+        overlays[activeChartTF].canvas.style.pointerEvents = 'auto';
+        overlays[activeChartTF].canvas.style.cursor = 'default';
+        overlays[activeChartTF].canvas.style.zIndex = '50';
+        curTool = '';
+        fiboActive = false;
+        toolBtns.forEach(b => b.classList.remove('active'));
         drawOverlays();
       }
     } else if (curTool === 'fibo' || curTool === 'tline') {
@@ -718,6 +921,49 @@ TFS.forEach(tf => {
 });
 
 document.addEventListener('mousemove', e => {
+  // Edit mode handle drag
+  if (editMode && editHandle && editTarget) {
+    const canvas = getActiveCanvas();
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const p = pixelToPriceOnChart(activeChartTF, y);
+    const t = xToTimeOnChart(activeChartTF, x);
+    if (p === null) return;
+    if (editTarget.type === 'hline') {
+      hlineSaved[editTarget.idx].price = p;
+    } else if (editTarget.type === 'tline') {
+      const tl = tlineSaved[editTarget.idx];
+      if (editHandle === 'p1') { tl.p1 = p; if (t) tl.t1 = t; }
+      else if (editHandle === 'p2') { tl.p2 = p; if (t) tl.t2 = t; }
+    } else if (editTarget.type === 'fibo') {
+      const fb = fiboSaved[editTarget.idx];
+      if (editHandle === 'p1') { fb.p1 = p; if (t) fb.t1 = t; }
+      else if (editHandle === 'p2') { fb.p2 = p; if (t) fb.t2 = t; }
+    }
+    drawOverlays();
+    return;
+  }
+
+  // TP/SL drag
+  if (tpslDrag) {
+    const canvas = overlays[activeChartTF]?.canvas;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const p = pixelToPriceOnChart(activeChartTF, y);
+    if (p !== null) {
+      if (tpslDrag.kind === 'tp' || tpslDrag.kind === 'tp_new') {
+        tpslDrag.obj.tp = p;
+      } else {
+        tpslDrag.obj.sl = p;
+      }
+    }
+    drawOverlays();
+    return;
+  }
+
   if (!fiboActive || !dragging) return;
   const canvas = getActiveCanvas();
   if (!canvas) return;
@@ -735,6 +981,21 @@ document.addEventListener('mousemove', e => {
 });
 
 document.addEventListener('mouseup', e => {
+  // Edit handle release
+  if (editMode && editHandle) {
+    editHandle = null;
+    return;
+  }
+
+  // TP/SL drag release
+  if (tpslDrag) {
+    tpslDrag = null;
+    tpslCooldown = Date.now() + 1000;
+    TFS.forEach(t => { charts[t].setScrollEnabled(true); charts[t].setZoomEnabled(true); });
+    drawOverlays();
+    return;
+  }
+
   if (!fiboActive || !dragging) return;
   const canvas = getActiveCanvas();
   if (!canvas) return;
@@ -742,14 +1003,17 @@ document.addEventListener('mouseup', e => {
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
 
+  let newEditTarget = null;
   if (curTool === 'tline') {
     if (tlineDrag && Math.abs(tlineDrag.p2 - tlineDrag.p1) > 0.001) {
       tlineSaved.push({ p1: tlineDrag.p1, p2: tlineDrag.p2, t1: tlineDrag.t1, t2: tlineDrag.t2 });
+      newEditTarget = { type: 'tline', idx: tlineSaved.length - 1 };
     }
     tlineDrag = null;
   } else if (curTool === 'fibo') {
     if (fiboDrag && Math.abs(fiboDrag.p2 - fiboDrag.p1) > 0.001) {
       fiboSaved.push({ p1: fiboDrag.p1, p2: fiboDrag.p2, t1: fiboDrag.t1, t2: fiboDrag.t2 });
+      newEditTarget = { type: 'fibo', idx: fiboSaved.length - 1 };
     }
     fiboDrag = null;
   }
@@ -757,7 +1021,32 @@ document.addEventListener('mouseup', e => {
   dragStartPrice = null;
   dragStartTime = null;
   dragStartX = null;
-  disableDrawTool();
+
+  // Enter edit mode instead of fully disabling
+  if (newEditTarget) {
+    editMode = true;
+    editTarget = newEditTarget;
+    editHandle = null;
+    curTool = '';
+    fiboActive = false;
+    toolBtns.forEach(b => b.classList.remove('active'));
+    // Keep canvas interactive on active chart, restore others
+    TFS.forEach(tf => {
+      if (tf === activeChartTF) {
+        overlays[tf].canvas.style.pointerEvents = 'auto';
+        overlays[tf].canvas.style.cursor = 'default';
+        overlays[tf].canvas.style.zIndex = '50';
+      } else {
+        overlays[tf].canvas.style.pointerEvents = 'none';
+        overlays[tf].canvas.style.cursor = 'default';
+        overlays[tf].canvas.style.zIndex = '10';
+      }
+      charts[tf].setScrollEnabled(true);
+      charts[tf].setZoomEnabled(true);
+    });
+  } else {
+    disableDrawTool();
+  }
   drawOverlays();
 });
 
@@ -823,8 +1112,18 @@ function hideDeleteMenu() { deleteMenu.style.display = 'none'; deleteTargetIdx =
 
 document.getElementById('dmenu-del').addEventListener('click', () => {
   if (deleteTargetIdx >= 0) {
-    const col = deleteTargetType === 'hline' ? hlineSaved : deleteTargetType === 'tline' ? tlineSaved : fiboSaved;
-    col.splice(deleteTargetIdx, 1);
+    if (deleteTargetType === 'limit') {
+      pendingOrders = pendingOrders.filter(o => o.id !== deleteTargetIdx);
+    } else {
+      const col = deleteTargetType === 'hline' ? hlineSaved : deleteTargetType === 'tline' ? tlineSaved : fiboSaved;
+      col.splice(deleteTargetIdx, 1);
+      // Fix edit target if deleted
+      if (editMode && editTarget && editTarget.type === deleteTargetType && editTarget.idx === deleteTargetIdx) {
+        editMode = false; editTarget = null; editHandle = null; disableDrawTool();
+      } else if (editMode && editTarget && editTarget.type === deleteTargetType && editTarget.idx > deleteTargetIdx) {
+        editTarget.idx--;
+      }
+    }
     drawOverlays();
   }
   hideDeleteMenu();
@@ -840,9 +1139,61 @@ TFS.forEach(tf => {
     e.preventDefault();
     const rect = overlays[tf].pane.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    // Check pending orders
+    for (const ord of pendingOrders) {
+      const y = priceToYForChart(charts[tf], ord.price);
+      if (y !== null && Math.abs(my - y) < 10) {
+        showDeleteMenu(e.clientX, e.clientY, ord.id, 'limit');
+        return;
+      }
+    }
     const hit = hitDrawObjectOnChart(tf, mx, my);
     if (hit) showDeleteMenu(e.clientX, e.clientY, hit.idx, hit.type);
   });
+});
+
+// ===== TP/SL position click selection =====
+TFS.forEach(tf => {
+  overlays[tf].pane.addEventListener('click', e => {
+    if (fiboActive || editMode) return;
+    const rect = overlays[tf].pane.getBoundingClientRect();
+    const my = e.clientY - rect.top;
+    // Check if click is near a position line
+    for (const p of positions) {
+      const y = priceToYForChart(charts[tf], p.price);
+      if (y !== null && Math.abs(my - y) < 15) {
+        selectedPosId = (selectedPosId === p.id) ? null : p.id;
+        drawOverlays();
+        return;
+      }
+    }
+    // Click elsewhere deselects
+    if (selectedPosId !== null) {
+      selectedPosId = null;
+      drawOverlays();
+    }
+  });
+});
+
+// ===== Limit Order long press =====
+['btn-buy', 'btn-sell'].forEach(btnId => {
+  const btn = document.getElementById(btnId);
+  const type = btnId === 'btn-buy' ? 'BUY' : 'SELL';
+
+  btn.addEventListener('mousedown', e => {
+    limitFired = false;
+    limitTimer = setTimeout(() => {
+      limitFired = true;
+      const mid = livePrice || bars1m[curIdx1m].c;
+      const limitPrice = type === 'BUY' ? mid - 3 : mid + 3;
+      pendingOrders.push({ type, price: limitPrice, lot: getLot(), id: ++posId });
+      drawOverlays();
+    }, 500);
+  });
+
+  btn.addEventListener('mouseup', () => { clearTimeout(limitTimer); limitTimer = null; });
+  btn.addEventListener('mouseleave', () => { clearTimeout(limitTimer); limitTimer = null; });
+  btn.addEventListener('contextmenu', e => e.preventDefault());
 });
 
 // ===== 設定パネル =====
@@ -912,7 +1263,7 @@ document.addEventListener('keydown', e => {
   if (e.key === ' ') { e.preventDefault(); btnPlay.click(); }
   if (e.key === 'b' || e.key === 'B') document.getElementById('btn-buy').click();
   if (e.key === 's' || e.key === 'S') document.getElementById('btn-sell').click();
-  if (e.key === 'Escape') disableDrawTool();
+  if (e.key === 'Escape') { if (editMode) { editMode = false; editTarget = null; editHandle = null; disableDrawTool(); } else { disableDrawTool(); } selectedPosId = null; }
 });
 </script>
 </body>
