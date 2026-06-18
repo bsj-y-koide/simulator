@@ -374,7 +374,13 @@ function checkTPSLAndLimits(mid) {
   });
   toFill.forEach(ord => {
     const price = ord.type === 'BUY' ? ord.price + HALF_SPREAD : ord.price - HALF_SPREAD;
-    positions.push({ id: ord.id, type: ord.type, price, lot: ord.lot, tp: null, sl: null, entryTime: new Date(bars1m[curIdx1m].t * 1000).toISOString(), entryIdx: curIdx1m });
+    let tp = ord.tp, sl = ord.sl;
+    if (tp === null && sl === null && autoTPSL.enabled) {
+      const tpDist = autoTPSL.tp * PIP, slDist = autoTPSL.sl * PIP;
+      if (ord.type === 'BUY') { tp = price + tpDist; sl = price - slDist; }
+      else { tp = price - tpDist; sl = price + slDist; }
+    }
+    positions.push({ id: ord.id, type: ord.type, price, lot: ord.lot, tp, sl, entryTime: new Date(bars1m[curIdx1m].t * 1000).toISOString(), entryIdx: curIdx1m });
     pendingOrders = pendingOrders.filter(o => o.id !== ord.id);
   });
 
@@ -633,6 +639,15 @@ function drawOverlays() {
       ctx.fillStyle = ord.type === 'BUY' ? '#42a5f5' : '#ef5350';
       ctx.fillText(`LIMIT ${ord.type} ${ord.lot} @ ${ord.price.toFixed(2)}`, 4, y - 3);
       ctx.restore();
+      // 指値のTP/SL
+      if (ord.tp !== null) {
+        const tpy = priceToYForChart(ch, ord.tp);
+        if (tpy !== null) { ctx.save(); ctx.strokeStyle='#76ff03'; ctx.lineWidth=1; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0,tpy); ctx.lineTo(w,tpy); ctx.stroke(); ctx.setLineDash([]); ctx.font='9px monospace'; ctx.fillStyle='#76ff03'; ctx.fillText('TP '+ord.tp.toFixed(2),4,tpy-2); ctx.restore(); }
+      }
+      if (ord.sl !== null) {
+        const sly = priceToYForChart(ch, ord.sl);
+        if (sly !== null) { ctx.save(); ctx.strokeStyle='#ff5252'; ctx.lineWidth=1; ctx.setLineDash([6,4]); ctx.beginPath(); ctx.moveTo(0,sly); ctx.lineTo(w,sly); ctx.stroke(); ctx.setLineDash([]); ctx.font='9px monospace'; ctx.fillStyle='#ff5252'; ctx.fillText('SL '+ord.sl.toFixed(2),4,sly-2); ctx.restore(); }
+      }
     });
   });
 }
@@ -1104,6 +1119,14 @@ var deleteTargetType = '';
 function showDeleteMenu(x, y, idx, type) {
   deleteTargetIdx = idx;
   deleteTargetType = type || '';
+  // タイプに応じてメニューテキスト変更
+  const editBtn = document.getElementById('dmenu-edit');
+  const delBtn = document.getElementById('dmenu-del');
+  if (type === 'pos_tp') { editBtn.style.display = 'none'; delBtn.textContent = 'TP 削除'; }
+  else if (type === 'pos_sl') { editBtn.style.display = 'none'; delBtn.textContent = 'SL 削除'; }
+  else if (type === 'position') { editBtn.style.display = 'none'; delBtn.textContent = '決済'; }
+  else if (type === 'limit') { editBtn.style.display = 'none'; delBtn.textContent = '指値キャンセル'; }
+  else { editBtn.style.display = 'block'; delBtn.textContent = '削除'; }
   deleteMenu.style.display = 'block';
   const mh = deleteMenu.offsetHeight, mw = deleteMenu.offsetWidth;
   deleteMenu.style.left = Math.min(x, window.innerWidth - mw - 4) + 'px';
@@ -1126,7 +1149,25 @@ document.getElementById('dmenu-edit').addEventListener('click', () => {
 });
 document.getElementById('dmenu-del').addEventListener('click', () => {
   if (deleteTargetIdx >= 0) {
-    if (deleteTargetType === 'limit') {
+    if (deleteTargetType === 'pos_tp') {
+      const p = positions.find(pp => pp.id === deleteTargetIdx);
+      if (p) p.tp = null;
+    } else if (deleteTargetType === 'pos_sl') {
+      const p = positions.find(pp => pp.id === deleteTargetIdx);
+      if (p) p.sl = null;
+    } else if (deleteTargetType === 'position') {
+      // 決済
+      const mid = livePrice || bars1m[curIdx1m]?.c || 0;
+      const p = positions.find(pp => pp.id === deleteTargetIdx);
+      if (p) {
+        const cur = p.type === 'BUY' ? mid - HALF_SPREAD : mid + HALF_SPREAD;
+        const diff = p.type === 'BUY' ? cur - p.price : p.price - cur;
+        realizedPnL += diff * p.lot * 100;
+        positions = positions.filter(pp => pp.id !== deleteTargetIdx);
+        if (selectedPosId === deleteTargetIdx) selectedPosId = null;
+        updatePnL(mid);
+      }
+    } else if (deleteTargetType === 'limit') {
       pendingOrders = pendingOrders.filter(o => o.id !== deleteTargetIdx);
     } else {
       const col = deleteTargetType === 'hline' ? hlineSaved : deleteTargetType === 'tline' ? tlineSaved : fiboSaved;
@@ -1153,14 +1194,22 @@ TFS.forEach(tf => {
     e.preventDefault();
     const rect = overlays[tf].pane.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    // Check pending orders
+    // TP/SLライン
+    for (const p of positions) {
+      if (p.tp !== null) { const y = priceToYForChart(charts[tf], p.tp); if (y !== null && Math.abs(my - y) < 10) { showDeleteMenu(e.clientX, e.clientY, p.id, 'pos_tp'); return; } }
+      if (p.sl !== null) { const y = priceToYForChart(charts[tf], p.sl); if (y !== null && Math.abs(my - y) < 10) { showDeleteMenu(e.clientX, e.clientY, p.id, 'pos_sl'); return; } }
+    }
+    // ポジションライン
+    for (const p of positions) {
+      const y = priceToYForChart(charts[tf], p.price);
+      if (y !== null && Math.abs(my - y) < 10) { showDeleteMenu(e.clientX, e.clientY, p.id, 'position'); return; }
+    }
+    // 指値
     for (const ord of pendingOrders) {
       const y = priceToYForChart(charts[tf], ord.price);
-      if (y !== null && Math.abs(my - y) < 10) {
-        showDeleteMenu(e.clientX, e.clientY, ord.id, 'limit');
-        return;
-      }
+      if (y !== null && Math.abs(my - y) < 10) { showDeleteMenu(e.clientX, e.clientY, ord.id, 'limit'); return; }
     }
+    // 描画オブジェクト
     const hit = hitDrawObjectOnChart(tf, mx, my);
     if (hit) showDeleteMenu(e.clientX, e.clientY, hit.idx, hit.type);
   });
