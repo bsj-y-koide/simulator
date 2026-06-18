@@ -448,13 +448,18 @@ function drawOverlays() {
     // Bid/Ask ライン
     const bidY = priceToYForChart(ch, bid);
     const askY = priceToYForChart(ch, ask);
-    [{ price: bid, color: '#ef5350', y: bidY }, { price: ask, color: '#26a69a', y: askY }].forEach(({ price, color, y }) => {
-      if (y === null || y < 0 || y > h) return;
-      ctx.save();
-      ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-      ctx.restore();
-    });
+    if (bidY !== null && askY !== null && Math.abs(bidY - askY) < 3) {
+      // 近すぎる場合は1本だけ
+      const my = (bidY + askY) / 2;
+      ctx.save(); ctx.strokeStyle = '#26a69a'; ctx.lineWidth = 0.5; ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(0, my); ctx.lineTo(w, my); ctx.stroke(); ctx.restore();
+    } else {
+      [{ price: bid, color: '#ef5350', y: bidY }, { price: ask, color: '#26a69a', y: askY }].forEach(({ price, color, y }) => {
+        if (y === null || y < 0 || y > h) return;
+        ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 0.5; ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); ctx.restore();
+      });
+    }
     // ラベル
     if (bidY !== null && askY !== null) {
       ctx.save();
