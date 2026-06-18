@@ -840,16 +840,47 @@ function pixelToPriceOnChart(tf, y) {
   } catch(e) { return null; }
 }
 
+function getMsPerPxOnChart(tf) {
+  const ch = charts[tf];
+  const cx = overlays[tf].pane.clientWidth;
+  try {
+    const ra = ch.convertFromPixel({ x: cx * 0.3, y: 100 }, { paneId: 'candle_pane', absolute: true });
+    const rb = ch.convertFromPixel({ x: cx * 0.7, y: 100 }, { paneId: 'candle_pane', absolute: true });
+    if (ra?.timestamp && rb?.timestamp && rb.timestamp !== ra.timestamp) {
+      return { msPerPx: (rb.timestamp - ra.timestamp) / (cx * 0.4), refX: cx * 0.7, refTs: rb.timestamp };
+    }
+  } catch(e) {}
+  return null;
+}
+
 function xToTimeOnChart(tf, x) {
   try {
-    const r = charts[tf].convertFromPixel({ x, y: 100 }, { paneId: 'candle_pane', absolute: true });
+    const ch = charts[tf];
+    const lastTs = bars1m[curIdx1m]?.t * 1000;
+    const lastPx = lastTs ? ch.convertToPixel({ timestamp: lastTs }, { paneId: 'candle_pane', absolute: true })?.x : null;
+    if (lastPx !== null && lastPx !== undefined && x > lastPx + 2) {
+      // 最終バーより右 → 外挿
+      const ref = getMsPerPxOnChart(tf);
+      if (ref) return ref.refTs + (x - ref.refX) * ref.msPerPx;
+      return lastTs + (x - lastPx) * (tf * 60 * 1000);
+    }
+    const r = ch.convertFromPixel({ x, y: 100 }, { paneId: 'candle_pane', absolute: true });
     return r?.timestamp || null;
   } catch(e) { return null; }
 }
 
 function timeToXOnChart(tf, ts) {
   try {
-    const r = charts[tf].convertToPixel({ timestamp: ts }, { paneId: 'candle_pane', absolute: true });
+    const ch = charts[tf];
+    const lastTs = bars1m[curIdx1m]?.t * 1000;
+    if (lastTs && ts > lastTs + tf * 60 * 1000) {
+      const ref = getMsPerPxOnChart(tf);
+      if (ref) return ref.refX + (ts - ref.refTs) / ref.msPerPx;
+      const lastPx = ch.convertToPixel({ timestamp: lastTs }, { paneId: 'candle_pane', absolute: true })?.x;
+      if (lastPx !== null) return lastPx + (ts - lastTs) / (tf * 60 * 1000);
+      return null;
+    }
+    const r = ch.convertToPixel({ timestamp: ts }, { paneId: 'candle_pane', absolute: true });
     return (r?.x !== undefined && r.x !== null) ? r.x : null;
   } catch(e) { return null; }
 }
