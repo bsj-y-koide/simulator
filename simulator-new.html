@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Trading Simulator</title>
+<script src="lib/klinecharts.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ツールバー2行 -->
+<div id="toolbar">
+  <div id="row1">
+    <span id="cur-time" style="display:none">--</span>
+    <span id="cur-price" style="display:none">--</span>
+    <a href="index.html" style="background:#21262d;color:#e6edf3;font-size:11px;text-decoration:none;padding:3px 8px;border-radius:4px;border:1px solid #30363d">TOP</a>
+    <span id="pnl-float">含み: ±0</span>
+    <span id="pnl-total">確定+含み: ±0</span>
+    <button id="btn-play">▶</button>
+    <div id="speed-wrap">速<input type="range" id="speed" min="1" max="10" value="3"></div>
+    <select id="tf-select">
+      <option value="1">1m</option>
+      <option value="5" selected>5m</option>
+      <option value="15">15m</option>
+      <option value="30">30m</option>
+      <option value="60">1h</option>
+      <option value="240">4h</option>
+      <option value="1440">1d</option>
+    </select>
+    <select id="lot" title="ロット">
+      <option>0.01</option><option>0.05</option><option selected>0.1</option>
+      <option>0.5</option><option>1.0</option>
+    </select>
+    <input type="date" id="start-date" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 6px;font-size:11px">
+    <button id="btn-go" style="background:#1565c0;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">GO</button>
+  </div>
+  <div id="row2">
+    <button id="btn-sell">SELL</button>
+    <button id="btn-buy">BUY</button>
+    <button id="btn-close">CLOSE</button>
+    <button class="tool-btn" data-tool="fibo" style="font-size:11px;min-width:32px">fb</button>
+    <button class="tool-btn" data-tool="hline" style="font-size:14px;min-width:32px">ー</button>
+    <button class="tool-btn" data-tool="tline" style="font-size:14px;min-width:32px">/</button>
+    <button class="tool-btn" data-tool="rect" style="font-size:11px;min-width:32px">□</button>
+    <button class="tool-btn" data-tool="text" style="font-size:11px;min-width:32px">T</button>
+    <input type="color" id="draw-color" value="#ff9800" title="線の色" style="-webkit-appearance:auto;appearance:auto;width:32px;height:32px;min-height:32px;padding:2px;border:1px solid #30363d;border-radius:4px;background:none;cursor:pointer;vertical-align:middle">
+    <button id="btn-tool-clear">✕</button>
+    <button id="btn-settings" style="font-size:14px;min-width:32px;background:#2a2a3a">⚙</button>
+    <span id="pos-info"></span>
+  </div>
+</div>
+
+<!-- 設定パネル -->
+<div id="ma-panel" style="display:none;position:fixed;top:60px;right:8px;background:#161b22;border:1px solid #30363d;border-radius:8px;z-index:200;padding:12px;font-size:13px;min-width:220px;max-height:80vh;overflow-y:auto">
+  <div style="display:flex;gap:6px;margin-bottom:10px;position:sticky;top:-12px;background:#161b22;padding:4px 0 8px;z-index:1">
+    <button id="ma-add" style="flex:1;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">+ 追加</button>
+    <button id="ma-apply" style="flex:1;background:#1565c0;color:#fff;border:none;border-radius:4px;padding:6px;font-size:12px;cursor:pointer;min-height:30px">適用</button>
+  </div>
+  <div style="font-weight:bold;margin-bottom:8px">MA設定</div>
+  <div id="ma-list"></div>
+  <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
+    <div style="font-weight:bold;margin-bottom:8px">自動TP/SL</div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="auto-tpsl-toggle" style="accent-color:#76ff03">
+      <span>エントリー時に自動設定</span>
+    </label>
+    <div id="auto-tpsl-settings" style="display:none;padding-left:24px;font-size:11px;color:#8b949e">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+        <span style="color:#76ff03;min-width:20px">TP</span>
+        <input id="auto-tp-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
+        <span>pips</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="color:#ff5252;min-width:20px">SL</span>
+        <input id="auto-sl-pips" type="number" min="1" max="999" value="30" style="width:50px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px 4px;font-size:12px;text-align:center">
+        <span>pips</span>
+      </div>
+    </div>
+  </div>
+  <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
+    <div style="font-weight:bold;margin-bottom:8px">セッション</div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" id="range-toggle" style="accent-color:#ff9800">
+      <span>時間帯レンジ</span>
+    </label>
+    <div id="range-settings" style="display:none;margin-top:6px;padding-left:24px;font-size:11px;color:#8b949e">
+      <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
+        <span>開始</span>
+        <input id="range-from" type="time" value="07:00" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px;font-size:11px">
+        <span>〜</span>
+        <input id="range-to" type="time" value="09:00" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px;font-size:11px">
+      </div>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span>終了</span>
+        <input id="range-end" type="time" value="05:00" style="background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:2px;font-size:11px">
+        <span style="color:#484f58">（翌日）</span>
+      </div>
+    </div>
+  </div>
+  <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px">
+    <div style="font-weight:bold;margin-bottom:8px">SMCインジケーター</div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="fvg-toggle" style="accent-color:#26a69a">
+      <span>FVG（Fair Value Gap）</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="bos-toggle" style="accent-color:#ef5350">
+      <span>BOS / CHoCH</span>
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+      <input type="checkbox" id="ob-toggle" style="accent-color:#42a5f5">
+      <span>Order Block</span>
+    </label>
+  </div>
+</div>
+
+<!-- チャート -->
+<div id="chart"></div>
+
+<div id="positions">ポジションなし</div>
+
+<script src="js/db.js"></script>
+<script src="js/indicators.js"></script>
+<script src="js/chart.js"></script>
+<script src="js/trading.js"></script>
+<script src="js/drawing.js"></script>
+<script src="js/settings.js"></script>
+<script>
+// グローバル: オーバーレイIDごとの色・テキストを管理
+var overlayColors = {};  // { overlayId: '#color' }
+var overlayTexts = {};   // { overlayId: 'text' }
+var drawColor = '#ff9800'; // 現在の描画色
+
+// カラーピッカー連携
+document.getElementById('draw-color').addEventListener('input', function() { drawColor = this.value; });
+
+// drawing.js の OVERLAY_NAMES を拡張
+OVERLAY_NAMES.rect = 'customRect';
+OVERLAY_NAMES.text = 'customText';
+
+// オーバーレイIDから色を取得
+function getOverlayColor(overlay, fallback) {
+  if (overlay.id && overlayColors[overlay.id]) return overlayColors[overlay.id];
+  return fallback;
+}
+
+// フィボナッチ再登録（色可変）
+klinecharts.registerOverlay({
+  name: 'customFibo',
+  totalStep: 3,
+  needDefaultPointFigure: true,
+  needDefaultXAxisFigure: false,
+  needDefaultYAxisFigure: false,
+  createPointFigures: function(params) {
+    var coordinates = params.coordinates, overlay = params.overlay, bounding = params.bounding, yAxis = params.yAxis;
+    var points = overlay.points;
+    if (coordinates.length < 2 || !yAxis) return [];
+    var v0 = points[0] != null ? points[0].value : null;
+    var v1 = points[1] != null ? points[1].value : null;
+    if (v0 == null || v1 == null || v0 === v1) return [];
+    var xL = Math.min(coordinates[0].x, coordinates[1].x);
+    var xR = Math.max(coordinates[0].x, coordinates[1].x);
+    var range = Math.abs(v0 - v1);
+    var isDown = v0 >= v1;
+    var LEVELS = [0, 1.0, 1.236, 1.382, 1.618, 1.764, 2.0, 2.618];
+    var c = getOverlayColor(overlay, '#ffffff');
+    var lines = [], texts = [];
+    LEVELS.forEach(function(lvl) {
+      var price = isDown ? (v1 + range * lvl) : (v1 - range * lvl);
+      var y = yAxis.convertToPixel(price);
+      if (y == null || y < -10 || y > bounding.height + 10) return;
+      lines.push({ coordinates: [{ x: xL, y: y }, { x: xR, y: y }] });
+      texts.push({ x: Math.min(xR + 4, bounding.width - 30), y: y, text: '' + lvl, align: 'left', baseline: 'middle', color: c, size: 11, family: 'monospace', style: 'normal', weight: 'normal', paddingLeft: 0, paddingRight: 0, paddingTop: 0, paddingBottom: 0 });
+    });
+    return [
+      { type: 'line', isCheckEvent: true, attrs: lines, styles: { color: c, size: 1 } },
+      { type: 'text', isCheckEvent: false, attrs: texts, styles: { backgroundColor: 'transparent' } }
+    ];
+  }
+});
+
+// トレンドライン再登録
+klinecharts.registerOverlay({
+  name: 'customSegment',
+  totalStep: 3,
+  needDefaultPointFigure: true,
+  needDefaultXAxisFigure: false,
+  needDefaultYAxisFigure: false,
+  createPointFigures: function(params) {
+    var coordinates = params.coordinates, overlay = params.overlay;
+    if (coordinates.length < 2) return [];
+    var c = getOverlayColor(overlay, '#ff9800');
+    var p0 = coordinates[0], p1 = coordinates[1];
+    var mx = (p0.x + p1.x) / 2, my = (p0.y + p1.y) / 2;
+    return [
+      { type: 'line', isCheckEvent: true, attrs: { coordinates: [p0, p1] }, styles: { color: c, size: 1 } },
+      { type: 'circle', isCheckEvent: true, attrs: { x: mx, y: my, r: 5 }, styles: { style: 'fill', color: c, borderColor: c, borderSize: 0 } }
+    ];
+  }
+});
+
+// 水平線再登録
+klinecharts.registerOverlay({
+  name: 'customHLine',
+  totalStep: 2,
+  needDefaultPointFigure: true,
+  needDefaultXAxisFigure: true,
+  needDefaultYAxisFigure: true,
+  createPointFigures: function(params) {
+    var coordinates = params.coordinates, bounding = params.bounding, overlay = params.overlay;
+    if (coordinates.length < 1) return [];
+    var c = getOverlayColor(overlay, '#ffeb3b');
+    var y = coordinates[0].y;
+    return [{ type: 'line', isCheckEvent: true, attrs: { coordinates: [{ x: 0, y: y }, { x: bounding.width, y: y }] }, styles: { color: c, size: 1 } }];
+  }
+});
+
+// 四角形
+klinecharts.registerOverlay({
+  name: 'customRect',
+  totalStep: 3,
+  needDefaultPointFigure: true,
+  needDefaultXAxisFigure: false,
+  needDefaultYAxisFigure: false,
+  createPointFigures: function(params) {
+    var coordinates = params.coordinates, overlay = params.overlay;
+    if (coordinates.length < 2) return [];
+    var c = getOverlayColor(overlay, '#ff9800');
+    var x1 = coordinates[0].x, y1 = coordinates[0].y;
+    var x2 = coordinates[1].x, y2 = coordinates[1].y;
+    var left = Math.min(x1, x2), top = Math.min(y1, y2);
+    var w = Math.abs(x2 - x1), h = Math.abs(y2 - y1);
+    return [
+      { type: 'rect', isCheckEvent: true, attrs: { x: left, y: top, width: w, height: h }, styles: { style: 'stroke', color: c, borderColor: c, borderSize: 1 } },
+      { type: 'rect', isCheckEvent: false, attrs: { x: left, y: top, width: w, height: h }, styles: { style: 'fill', color: c + '18' } }
+    ];
+  }
+});
+
+// テキスト
+klinecharts.registerOverlay({
+  name: 'customText',
+  totalStep: 2,
+  needDefaultPointFigure: true,
+  needDefaultXAxisFigure: false,
+  needDefaultYAxisFigure: false,
+  createPointFigures: function(params) {
+    var coordinates = params.coordinates, overlay = params.overlay;
+    if (coordinates.length < 1) return [];
+    var c = getOverlayColor(overlay, '#ffffff');
+    var txt = (overlay.id && overlayTexts[overlay.id]) || 'Text';
+    return [{ type: 'text', isCheckEvent: true, attrs: { x: coordinates[0].x, y: coordinates[0].y, text: txt, align: 'left', baseline: 'top', color: c, size: 14, family: 'monospace', style: 'normal', weight: 'bold', paddingLeft: 2, paddingRight: 2, paddingTop: 2, paddingBottom: 2 }, styles: { backgroundColor: 'transparent' } }];
+  }
+});
+
+// オーバーレイ作成時に色を記録
+chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, function(e) {
+  if (e && e.overlay && e.overlay.id) {
+    if (!overlayColors[e.overlay.id]) {
+      overlayColors[e.overlay.id] = drawColor;
+    }
+  }
+});
+
+// 右クリックメニューに「色変更」を追加
+(function() {
+  var btnStyle = 'width:100%;background:none;padding:5px 20px;border:none;color:#ddd;font-size:13px;cursor:pointer;text-align:left;font-family:monospace;display:block';
+  var colorBtn = document.createElement('button');
+  colorBtn.id = 'dmenu-color';
+  colorBtn.textContent = '色変更';
+  colorBtn.style.cssText = btnStyle;
+  colorBtn.onmouseover = function() { this.style.background = '#3d6a99'; };
+  colorBtn.onmouseout = function() { this.style.background = 'none'; };
+  var dupBtn = document.getElementById('dmenu-dup');
+  deleteMenu.insertBefore(colorBtn, dupBtn);
+  var sep = document.createElement('div');
+  sep.style.cssText = 'height:1px;background:#4a4a4a;margin:2px 0';
+  deleteMenu.insertBefore(sep, dupBtn);
+
+  colorBtn.addEventListener('click', function() {
+    if (!deleteTargetOverlay) { hideDeleteMenu(); return; }
+    overlayColors[deleteTargetOverlay.id] = drawColor;
+    hideDeleteMenu();
+  });
+})();
+
+// ツールボタンのクリックを上書き — 描画色を記録 + テキスト入力
+(function() {
+  var toolBtns2 = document.querySelectorAll('.tool-btn');
+  toolBtns2.forEach(function(btn) {
+    var newBtn = btn.cloneNode(true);
+    btn.parentNode.replaceChild(newBtn, btn);
+    newBtn.addEventListener('click', function() {
+      var v = newBtn.dataset.tool;
+      document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
+      newBtn.classList.add('active');
+      var name = OVERLAY_NAMES[v] || v;
+      if (v === 'text') {
+        var txt = prompt('テキストを入力', 'memo');
+        if (!txt) { newBtn.classList.remove('active'); return; }
+        // テキストはoverlay作成後にIDで紐付け
+        var pending = txt;
+        var origSub = chart.subscribeAction;
+        var handler = function(e) {
+          if (e && e.overlay && e.overlay.id && e.overlay.name === 'customText') {
+            overlayTexts[e.overlay.id] = pending;
+            overlayColors[e.overlay.id] = drawColor;
+          }
+        };
+        chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, handler);
+        chart.createOverlay({ name: name });
+        // 一度だけで十分なので少し後に解除はしない（複数登録しても問題ない）
+      } else {
+        chart.createOverlay({ name: name });
+      }
+    });
+  });
+})();
+</script>
+<script>
+// 日付ジャンプ機能
+(function() {
+  const dateInput = document.getElementById('start-date');
+  const btnGo = document.getElementById('btn-go');
+
+  // データロード後に日付範囲を設定
+  function initDateRange() {
+    if (!bars1m || bars1m.length === 0) return setTimeout(initDateRange, 200);
+    const PAST_BARS = 220000;
+    const minTs = bars1m[Math.min(PAST_BARS, bars1m.length - 1)].t;
+    const maxTs = bars1m[bars1m.length - 1].t;
+    dateInput.min = new Date(minTs * 1000).toISOString().slice(0, 10);
+    dateInput.max = new Date(maxTs * 1000).toISOString().slice(0, 10);
+    // 現在のスタート日を表示
+    const curTs = bars1m[curIdx1m].t;
+    dateInput.value = new Date(curTs * 1000).toISOString().slice(0, 10);
+  }
+  initDateRange();
+
+  btnGo.addEventListener('click', jumpToDate);
+  dateInput.addEventListener('keydown', e => { if (e.key === 'Enter') jumpToDate(); });
+
+  function jumpToDate() {
+    const dateStr = dateInput.value;
+    if (!dateStr || !bars1m || bars1m.length === 0) return;
+
+    // 選択日のUTC 0:00（= JST 9:00）のタイムスタンプ
+    const targetTs = new Date(dateStr + 'T00:00:00Z').getTime() / 1000;
+
+    // bars1m から該当日以降の最初のバーを二分探索
+    let lo = 0, hi = bars1m.length - 1, best = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (bars1m[mid].t >= targetTs) { best = mid; hi = mid - 1; }
+      else lo = mid + 1;
+    }
+    if (best < 0) { alert('指定日のデータが見つかりません'); return; }
+
+    // 再生停止
+    if (playing) { stopPlay(); playing = false; document.getElementById('btn-play').textContent = '▶'; }
+
+    // セッション状態を完全リセット
+    positions = [];
+    pendingOrders = [];
+    realizedPnL = 0;
+    tradeHistory = [];
+    posId = 0;
+    selectedPosId = null;
+    selectedLimitId = null;
+    tpslDrag = null;
+    sessionId = Date.now();
+
+    // チャート位置をリセット
+    curIdx1m = best;
+    sessionStartIdx = best;
+    livePrice = bars1m[best].c;
+
+    // 描画リセット
+    if (typeof fiboLines !== 'undefined') fiboLines.length = 0;
+    if (typeof hLines !== 'undefined') hLines.length = 0;
+    if (typeof tLines !== 'undefined') tLines.length = 0;
+    if (typeof redrawFibo === 'function') redrawFibo();
+
+    // PnL表示リセット
+    document.getElementById('pnl-float').textContent = '含み: ±0';
+    document.getElementById('pnl-float').style.color = '#e6edf3';
+    document.getElementById('pnl-total').textContent = '確定+含み: ±0';
+    document.getElementById('pnl-total').style.color = '#e6edf3';
+    document.getElementById('positions').innerHTML = '<span style="color:#666">ポジションなし</span>';
+    document.getElementById('pos-info').textContent = '';
+
+    renderBars();
+    // チャートを最新バー位置にスクロール
+    setTimeout(function() { chart.scrollToRealTime(); }, 50);
+  }
+})();
+</script>
+</body>
+</html>
