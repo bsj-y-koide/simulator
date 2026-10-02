@@ -124,6 +124,25 @@
 <script src="js/indicators.js"></script>
 <script src="js/chart.js"></script>
 <script src="js/trading.js"></script>
+<script>
+// テキストモード中はdrawing.jsのタッチプロキシをバイパスするため、先にキャプチャ
+var _chartDiv = document.getElementById('chart');
+_chartDiv.addEventListener('touchstart', function(e) {
+  if (!window._textMode) return;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+}, { capture: true, passive: false });
+_chartDiv.addEventListener('touchend', function(e) {
+  if (!window._textMode) return;
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  var t = e.changedTouches[0];
+  if (t) {
+    // テキスト入力表示（後で定義されるshowTextInputを呼ぶ）
+    window._textTouchEnd = { x: t.clientX, y: t.clientY };
+  }
+}, { capture: true, passive: false });
+</script>
 <script src="js/drawing.js"></script>
 <script src="js/settings.js"></script>
 <script>
@@ -285,25 +304,20 @@ chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, function(e) {
   });
 })();
 
-// ツールボタンのクリックを上書き — 描画色を記録 + テキスト入力
+// ツールボタンにイベントを追加（既存のdrawing.jsリスナーは残す）
 (function() {
-  var toolBtns2 = document.querySelectorAll('.tool-btn');
-  toolBtns2.forEach(function(btn) {
-    var newBtn = btn.cloneNode(true);
-    btn.parentNode.replaceChild(newBtn, btn);
-    newBtn.addEventListener('click', function() {
-      var v = newBtn.dataset.tool;
-      document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
-      newBtn.classList.add('active');
-      var name = OVERLAY_NAMES[v] || v;
+  document.querySelectorAll('.tool-btn').forEach(function(btn) {
+    btn.addEventListener('click', function(e) {
+      var v = btn.dataset.tool;
       if (v === 'text') {
-        // テキストモード: チャートクリックで入力欄を表示
+        // テキストモード: drawing.jsのcreateOverlayを防いでテキスト入力モードに
+        e.stopImmediatePropagation();
+        document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
         window._textMode = true;
-        return;
-      } else {
-        chart.createOverlay({ name: name });
       }
-    });
+      // 他のツールはdrawing.jsのリスナーがそのまま処理
+    }, true); // capture: trueでdrawing.jsより先に実行
   });
 })();
 
@@ -324,24 +338,36 @@ chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, function(e) {
 
   var pendingTs = null, pendingVal = null;
 
-  chartDiv.addEventListener('click', function(e) {
-    if (!window._textMode) return;
+  function showTextInput(clientX, clientY) {
     var rect = chartDiv.getBoundingClientRect();
-    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    var mx = clientX - rect.left, my = clientY - rect.top;
 
-    // クリック位置のタイムスタンプ・価格を記録
     pendingTs = xToTime(mx);
     pendingVal = pixelToPrice(my);
     if (pendingTs == null || pendingVal == null) return;
 
-    // 入力欄をクリック位置に表示
     inputBox.style.left = mx + 'px';
     inputBox.style.top = my + 'px';
     inputBox.style.display = '';
     inputBox.value = '';
-    inputBox.focus();
+    // タッチデバイスでは少し遅延してフォーカス
+    setTimeout(function() { inputBox.focus(); }, 50);
+  }
+
+  // PC: click
+  chartDiv.addEventListener('click', function(e) {
+    if (!window._textMode) return;
+    showTextInput(e.clientX, e.clientY);
     e.stopPropagation();
   }, true);
+
+  // スマホ: drawing.js 前のキャプチャハンドラで記録されたタッチ座標を拾う
+  setInterval(function() {
+    if (window._textTouchEnd && window._textMode) {
+      showTextInput(window._textTouchEnd.x, window._textTouchEnd.y);
+      window._textTouchEnd = null;
+    }
+  }, 50);
 
   function commitText() {
     var txt = inputBox.value.trim();
