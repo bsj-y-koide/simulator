@@ -44,7 +44,14 @@
     <button class="tool-btn" data-tool="tline" style="font-size:14px;min-width:32px">/</button>
     <button class="tool-btn" data-tool="rect" style="font-size:11px;min-width:32px">□</button>
     <button class="tool-btn" data-tool="text" style="font-size:11px;min-width:32px">T</button>
-    <input type="color" id="draw-color" value="#ff9800" title="線の色" style="-webkit-appearance:auto;appearance:auto;width:32px;height:32px;min-height:32px;padding:2px;border:1px solid #30363d;border-radius:4px;background:none;cursor:pointer;vertical-align:middle">
+    <span id="color-palette" style="display:inline-flex;gap:2px;vertical-align:middle">
+      <button class="color-btn" data-color="#ff9800" style="width:24px;height:24px;min-width:24px;min-height:24px;padding:0;border:2px solid #fff;border-radius:50%;background:#ff9800;cursor:pointer"></button>
+      <button class="color-btn" data-color="#ffeb3b" style="width:24px;height:24px;min-width:24px;min-height:24px;padding:0;border:2px solid transparent;border-radius:50%;background:#ffeb3b;cursor:pointer"></button>
+      <button class="color-btn" data-color="#ffffff" style="width:24px;height:24px;min-width:24px;min-height:24px;padding:0;border:2px solid transparent;border-radius:50%;background:#ffffff;cursor:pointer"></button>
+      <button class="color-btn" data-color="#26a69a" style="width:24px;height:24px;min-width:24px;min-height:24px;padding:0;border:2px solid transparent;border-radius:50%;background:#26a69a;cursor:pointer"></button>
+      <button class="color-btn" data-color="#ef5350" style="width:24px;height:24px;min-width:24px;min-height:24px;padding:0;border:2px solid transparent;border-radius:50%;background:#ef5350;cursor:pointer"></button>
+      <button class="color-btn" data-color="#42a5f5" style="width:24px;height:24px;min-width:24px;min-height:24px;padding:0;border:2px solid transparent;border-radius:50%;background:#42a5f5;cursor:pointer"></button>
+    </span>
     <button id="btn-tool-clear">✕</button>
     <button id="btn-settings" style="font-size:14px;min-width:32px;background:#2a2a3a">⚙</button>
     <span id="pos-info"></span>
@@ -125,21 +132,53 @@
 <script src="js/chart.js"></script>
 <script src="js/trading.js"></script>
 <script>
-// テキストモード中はdrawing.jsのタッチプロキシをバイパスするため、先にキャプチャ
+// テキスト・四角形モード: drawing.jsのタッチプロキシをバイパスし独自処理
 var _chartDiv = document.getElementById('chart');
+window._textMode = false;
+window._rectMode = false;
+window._rectFirstTouch = null; // { ts, val } 四角形の1点目
+
 _chartDiv.addEventListener('touchstart', function(e) {
-  if (!window._textMode) return;
+  if (!window._textMode && !window._rectMode) return;
   e.stopImmediatePropagation();
   e.preventDefault();
 }, { capture: true, passive: false });
+
 _chartDiv.addEventListener('touchend', function(e) {
-  if (!window._textMode) return;
+  if (!window._textMode && !window._rectMode) return;
   e.stopImmediatePropagation();
   e.preventDefault();
   var t = e.changedTouches[0];
-  if (t) {
-    // テキスト入力表示（後で定義されるshowTextInputを呼ぶ）
+  if (!t) return;
+
+  if (window._textMode) {
     window._textTouchEnd = { x: t.clientX, y: t.clientY };
+    return;
+  }
+
+  if (window._rectMode) {
+    var rect = _chartDiv.getBoundingClientRect();
+    var mx = t.clientX - rect.left, my = t.clientY - rect.top;
+    var ts = xToTime(mx);
+    var val = pixelToPrice(my);
+    if (ts == null || val == null) return;
+
+    if (!window._rectFirstTouch) {
+      // 1点目記録
+      window._rectFirstTouch = { ts: ts, val: val };
+    } else {
+      // 2点目 → オーバーレイ作成
+      var p1 = { timestamp: window._rectFirstTouch.ts, value: window._rectFirstTouch.val };
+      var p2 = { timestamp: ts, value: val };
+      var ov = chart.createOverlay({ name: 'customRect', points: [p1, p2] });
+      if (ov) {
+        overlayColors[ov] = drawColor;
+      }
+      window._rectFirstTouch = null;
+      window._rectMode = false;
+      document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
+    }
+    return;
   }
 }, { capture: true, passive: false });
 </script>
@@ -151,8 +190,16 @@ var overlayColors = {};  // { overlayId: '#color' }
 var overlayTexts = {};   // { overlayId: 'text' }
 var drawColor = '#ff9800'; // 現在の描画色
 
-// カラーピッカー連携
-document.getElementById('draw-color').addEventListener('input', function() { drawColor = this.value; });
+// カラーパレット連携
+document.querySelectorAll('.color-btn').forEach(function(btn) {
+  btn.addEventListener('click', function(e) {
+    e.stopPropagation();
+    drawColor = btn.dataset.color;
+    document.querySelectorAll('.color-btn').forEach(function(b) {
+      b.style.borderColor = b.dataset.color === drawColor ? '#fff' : 'transparent';
+    });
+  });
+});
 
 // drawing.js の OVERLAY_NAMES を拡張
 OVERLAY_NAMES.rect = 'customRect';
@@ -304,19 +351,28 @@ chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, function(e) {
   });
 })();
 
-// ツールボタンにイベントを追加（既存のdrawing.jsリスナーは残す）
+// ツールボタンにイベントを追加（text/rect は独自処理、他はdrawing.jsに任せる）
 (function() {
   document.querySelectorAll('.tool-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
       var v = btn.dataset.tool;
+      // モード切り替え時にリセット
+      window._textMode = false;
+      window._rectMode = false;
+      window._rectFirstTouch = null;
+
       if (v === 'text') {
-        // テキストモード: drawing.jsのcreateOverlayを防いでテキスト入力モードに
         e.stopImmediatePropagation();
         document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
         window._textMode = true;
+      } else if (v === 'rect') {
+        e.stopImmediatePropagation();
+        document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        window._rectMode = true;
       }
-      // 他のツールはdrawing.jsのリスナーがそのまま処理
+      // 他のツール(fibo/hline/tline)はdrawing.jsのリスナーがそのまま処理
     }, true); // capture: trueでdrawing.jsより先に実行
   });
 })();
