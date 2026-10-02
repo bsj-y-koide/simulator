@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Trading Simulator</title>
-<script src="lib/klinecharts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/klinecharts@9.8.5/dist/umd/klinecharts.min.js"></script>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -297,24 +297,85 @@ chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, function(e) {
       newBtn.classList.add('active');
       var name = OVERLAY_NAMES[v] || v;
       if (v === 'text') {
-        var txt = prompt('テキストを入力', 'memo');
-        if (!txt) { newBtn.classList.remove('active'); return; }
-        // テキストはoverlay作成後にIDで紐付け
-        var pending = txt;
-        var origSub = chart.subscribeAction;
-        var handler = function(e) {
-          if (e && e.overlay && e.overlay.id && e.overlay.name === 'customText') {
-            overlayTexts[e.overlay.id] = pending;
-            overlayColors[e.overlay.id] = drawColor;
-          }
-        };
-        chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, handler);
-        chart.createOverlay({ name: name });
-        // 一度だけで十分なので少し後に解除はしない（複数登録しても問題ない）
+        // テキストモード: チャートクリックで入力欄を表示
+        window._textMode = true;
+        return;
       } else {
         chart.createOverlay({ name: name });
       }
     });
+  });
+})();
+
+// チャート上テキスト入力
+(function() {
+  var chartDiv = document.getElementById('chart');
+  var inputBox = document.createElement('input');
+  inputBox.type = 'text';
+  inputBox.placeholder = 'Enter で確定';
+  Object.assign(inputBox.style, {
+    position: 'absolute', display: 'none', zIndex: '300',
+    background: '#0d1117', color: '#e6edf3', border: '1px solid #58a6ff',
+    borderRadius: '4px', padding: '4px 8px', fontSize: '14px',
+    fontFamily: 'monospace', fontWeight: 'bold', outline: 'none',
+    minWidth: '100px'
+  });
+  chartDiv.appendChild(inputBox);
+
+  var pendingTs = null, pendingVal = null;
+
+  chartDiv.addEventListener('click', function(e) {
+    if (!window._textMode) return;
+    var rect = chartDiv.getBoundingClientRect();
+    var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+    // クリック位置のタイムスタンプ・価格を記録
+    pendingTs = xToTime(mx);
+    pendingVal = pixelToPrice(my);
+    if (pendingTs == null || pendingVal == null) return;
+
+    // 入力欄をクリック位置に表示
+    inputBox.style.left = mx + 'px';
+    inputBox.style.top = my + 'px';
+    inputBox.style.display = '';
+    inputBox.value = '';
+    inputBox.focus();
+    e.stopPropagation();
+  }, true);
+
+  function commitText() {
+    var txt = inputBox.value.trim();
+    inputBox.style.display = 'none';
+    window._textMode = false;
+    document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (!txt || pendingTs == null || pendingVal == null) return;
+
+    var points = [{ timestamp: pendingTs, value: pendingVal }];
+    var ov = chart.createOverlay({ name: 'customText', points: points });
+    // IDを取得して色・テキストを記録
+    if (ov) {
+      overlayTexts[ov] = txt;
+      overlayColors[ov] = drawColor;
+    }
+    // OnOverlayChange でもキャッチ
+    var handler = function(ev) {
+      if (ev && ev.overlay && ev.overlay.name === 'customText' && ev.overlay.id) {
+        if (!overlayTexts[ev.overlay.id]) {
+          overlayTexts[ev.overlay.id] = txt;
+          overlayColors[ev.overlay.id] = drawColor;
+        }
+      }
+    };
+    chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, handler);
+  }
+
+  inputBox.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); commitText(); }
+    if (e.key === 'Escape') { inputBox.style.display = 'none'; window._textMode = false; document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); }); }
+    e.stopPropagation();
+  });
+  inputBox.addEventListener('blur', function() {
+    if (inputBox.style.display !== 'none') commitText();
   });
 })();
 </script>
