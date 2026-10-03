@@ -157,30 +157,39 @@ _chartDiv.addEventListener('touchend', function(e) {
   }
 
   if (window._rectMode) {
-    var rect = _chartDiv.getBoundingClientRect();
-    var mx = t.clientX - rect.left, my = t.clientY - rect.top;
-    var ts = xToTime(mx);
-    var val = pixelToPrice(my);
-    if (ts == null || val == null) return;
-
-    if (!window._rectFirstTouch) {
-      // 1点目記録
-      window._rectFirstTouch = { ts: ts, val: val };
-    } else {
-      // 2点目 → オーバーレイ作成
-      var p1 = { timestamp: window._rectFirstTouch.ts, value: window._rectFirstTouch.val };
-      var p2 = { timestamp: ts, value: val };
-      var ov = chart.createOverlay({ name: 'customRect', points: [p1, p2] });
-      if (ov) {
-        overlayColors[ov] = drawColor;
-      }
-      window._rectFirstTouch = null;
-      window._rectMode = false;
-      document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
-    }
+    _handleRectPoint(t.clientX, t.clientY);
     return;
   }
 }, { capture: true, passive: false });
+
+// 四角形ポイント処理（タッチ・クリック共通）
+function _handleRectPoint(clientX, clientY) {
+  var rect = _chartDiv.getBoundingClientRect();
+  var mx = clientX - rect.left, my = clientY - rect.top;
+  var ts = xToTime(mx);
+  var val = pixelToPrice(my);
+  if (ts == null || val == null) return;
+
+  if (!window._rectFirstTouch) {
+    window._rectFirstTouch = { ts: ts, val: val };
+  } else {
+    var p1 = { timestamp: window._rectFirstTouch.ts, value: window._rectFirstTouch.val };
+    var p2 = { timestamp: ts, value: val };
+    var ov = chart.createOverlay({ name: 'customRect', points: [p1, p2] });
+    if (ov) overlayColors[ov] = drawColor;
+    window._rectFirstTouch = null;
+    window._rectMode = false;
+    document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
+  }
+}
+
+// PC用: クリックでrect/textを処理
+_chartDiv.addEventListener('click', function(e) {
+  if (window._rectMode) {
+    _handleRectPoint(e.clientX, e.clientY);
+    e.stopPropagation();
+  }
+}, true);
 </script>
 <script src="js/drawing.js"></script>
 <script src="js/settings.js"></script>
