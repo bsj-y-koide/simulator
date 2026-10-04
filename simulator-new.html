@@ -132,67 +132,23 @@
 <script src="js/chart.js"></script>
 <script src="js/trading.js"></script>
 <script>
-// テキスト・四角形モード: drawing.jsのタッチプロキシをバイパスし独自処理
+// テキストモード: drawing.jsのタッチプロキシをバイパス
 var _chartDiv = document.getElementById('chart');
 window._textMode = false;
-window._rectMode = false;
-window._rectFirstTouch = null; // { ts, val } 四角形の1点目
 
 _chartDiv.addEventListener('touchstart', function(e) {
-  if (!window._textMode && !window._rectMode) return;
+  if (!window._textMode) return;
   e.stopImmediatePropagation();
   e.preventDefault();
 }, { capture: true, passive: false });
 
 _chartDiv.addEventListener('touchend', function(e) {
-  if (!window._textMode && !window._rectMode) return;
+  if (!window._textMode) return;
   e.stopImmediatePropagation();
   e.preventDefault();
   var t = e.changedTouches[0];
-  if (!t) return;
-
-  if (window._textMode) {
-    window._textTouchEnd = { x: t.clientX, y: t.clientY };
-    return;
-  }
-
-  if (window._rectMode) {
-    _handleRectPoint(t.clientX, t.clientY);
-    return;
-  }
+  if (t) window._textTouchEnd = { x: t.clientX, y: t.clientY };
 }, { capture: true, passive: false });
-
-// 四角形ポイント処理（タッチ・クリック共通）
-function _handleRectPoint(clientX, clientY) {
-  var rect = _chartDiv.getBoundingClientRect();
-  var mx = clientX - rect.left, my = clientY - rect.top;
-  var ts = xToTime(mx);
-  var val = pixelToPrice(my);
-  if (ts == null || val == null) return;
-
-  if (!window._rectFirstTouch) {
-    window._rectFirstTouch = { ts: ts, val: val };
-  } else {
-    var p1 = { timestamp: window._rectFirstTouch.ts, value: window._rectFirstTouch.val };
-    var p2 = { timestamp: ts, value: val };
-    var ov = chart.createOverlay({ name: 'customRect', points: [p1, p2] });
-    if (ov) overlayColors[ov] = drawColor;
-    window._rectFirstTouch = null;
-    window._rectMode = false;
-    document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
-  }
-}
-
-// PC用: クリックでrect/textを処理（documentレベルcaptureでcanvas内クリックも捕捉）
-document.addEventListener('click', function(e) {
-  if (!window._rectMode) return;
-  // チャート領域内のクリックのみ処理
-  var rect = _chartDiv.getBoundingClientRect();
-  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
-  e.stopPropagation();
-  e.preventDefault();
-  _handleRectPoint(e.clientX, e.clientY);
-}, true);
 </script>
 <script src="js/drawing.js"></script>
 <script src="js/settings.js"></script>
@@ -363,29 +319,21 @@ chart.subscribeAction(klinecharts.ActionType.OnOverlayChange, function(e) {
   });
 })();
 
-// ツールボタンにイベントを追加（text/rect は独自処理、他はdrawing.jsに任せる）
+// ツールボタン: text のみ独自処理、rect含む他はdrawing.js標準フロー
 (function() {
   document.querySelectorAll('.tool-btn').forEach(function(btn) {
     btn.addEventListener('click', function(e) {
       var v = btn.dataset.tool;
-      // モード切り替え時にリセット
       window._textMode = false;
-      window._rectMode = false;
-      window._rectFirstTouch = null;
 
       if (v === 'text') {
         e.stopImmediatePropagation();
         document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
         window._textMode = true;
-      } else if (v === 'rect') {
-        e.stopImmediatePropagation();
-        document.querySelectorAll('.tool-btn').forEach(function(b) { b.classList.remove('active'); });
-        btn.classList.add('active');
-        window._rectMode = true;
       }
-      // 他のツール(fibo/hline/tline)はdrawing.jsのリスナーがそのまま処理
-    }, true); // capture: trueでdrawing.jsより先に実行
+      // rect/fibo/hline/tline はdrawing.jsのリスナーがcreateOverlayで処理
+    }, true);
   });
 })();
 
