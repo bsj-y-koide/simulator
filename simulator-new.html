@@ -183,12 +183,15 @@ function _handleRectPoint(clientX, clientY) {
   }
 }
 
-// PC用: クリックでrect/textを処理
-_chartDiv.addEventListener('click', function(e) {
-  if (window._rectMode) {
-    _handleRectPoint(e.clientX, e.clientY);
-    e.stopPropagation();
-  }
+// PC用: クリックでrect/textを処理（documentレベルcaptureでcanvas内クリックも捕捉）
+document.addEventListener('click', function(e) {
+  if (!window._rectMode) return;
+  // チャート領域内のクリックのみ処理
+  var rect = _chartDiv.getBoundingClientRect();
+  if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+  e.stopPropagation();
+  e.preventDefault();
+  _handleRectPoint(e.clientX, e.clientY);
 }, true);
 </script>
 <script src="js/drawing.js"></script>
